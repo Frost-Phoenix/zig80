@@ -33,26 +33,8 @@
         zigimportsPkg = env.pkgs.zigimports;
         treefmtEval = treefmt-nix.lib.evalModule env.pkgs ./treefmt.nix;
 
-        nativeBuildInputs = with env.pkgs; [ wayland-scanner ];
-
-        buildInputs = with env.pkgs; [
-          libGL
-          alsa-lib
-          glfw-wayland
-          libxkbcommon
-
-          # X11 dependencies
-          xorg.libX11
-          xorg.libX11.dev
-          xorg.libXcursor
-          xorg.libXi
-          xorg.libXinerama
-          xorg.libXrandr
-
-          # Wayland
-          wayland
-          wayland.dev
-        ];
+        nativeBuildInputs = with env.pkgs; [ ];
+        buildInputs = with env.pkgs; [ ];
       in
       with builtins;
       with env.pkgs.lib;
