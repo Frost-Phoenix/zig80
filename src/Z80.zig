@@ -140,18 +140,18 @@ fn wb(z: *Z80, addr: u16, val: u8) void {
 }
 
 fn rw(z: *Z80, addr: u16) u16 {
-    return (@as(u16, z.rb(addr + 1)) << 8) | z.rb(addr);
+    return (@as(u16, z.rb(addr +% 1)) << 8) | z.rb(addr);
 }
 
 fn ww(z: *Z80, addr: u16, val: u16) void {
-    z.wb(addr + 1, @truncate(val >> 8));
+    z.wb(addr +% 1, @truncate(val >> 8));
     z.wb(addr, @truncate(val & 0xff));
 }
 
 fn nextb(z: *Z80) u8 {
     const val = z.rb(z.pc);
 
-    z.pc += 1;
+    z.pc +%= 1;
 
     return val;
 }
@@ -159,7 +159,7 @@ fn nextb(z: *Z80) u8 {
 fn nextw(z: *Z80) u16 {
     const val = z.rw(z.pc);
 
-    z.pc += 2;
+    z.pc +%= 2;
 
     return val;
 }
