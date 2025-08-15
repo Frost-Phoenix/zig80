@@ -140,12 +140,12 @@ fn wb(z: *Z80, addr: u16, val: u8) void {
 }
 
 fn rw(z: *Z80, addr: u16) u16 {
-    return (z.rb(addr + 1) << 8) | z.rb(addr);
+    return (@as(u16, z.rb(addr + 1)) << 8) | z.rb(addr);
 }
 
 fn ww(z: *Z80, addr: u16, val: u16) void {
-    z.wb(addr + 1, val >> 8);
-    z.wb(addr, val & 0xff);
+    z.wb(addr + 1, @truncate(val >> 8));
+    z.wb(addr, @truncate(val & 0xff));
 }
 
 fn nextb(z: *Z80) u8 {
