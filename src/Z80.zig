@@ -6,34 +6,6 @@ const std = @import("std");
 
 // ********** //
 
-fn RegisterPair(comptime name1: [:0]const u8, comptime name2: [:0]const u8) type {
-    return packed union {
-        w: u16,
-        b: @Type(.{
-            .@"struct" = .{
-                .layout = .@"packed",
-                .fields = &.{
-                    .{
-                        .name = name2,
-                        .type = u8,
-                        .default_value_ptr = null,
-                        .is_comptime = false,
-                        .alignment = 0,
-                    },
-                    .{
-                        .name = name1,
-                        .type = u8,
-                        .default_value_ptr = null,
-                        .is_comptime = false,
-                        .alignment = 0,
-                    },
-                },
-                .decls = &.{},
-                .is_tuple = false,
-            },
-        }),
-    };
-}
 
 const Flags = packed union {
     b: u8,
@@ -54,15 +26,18 @@ memory: [65536]u8,
 // main registers
 a: u8,
 f: Flags,
-bc: RegisterPair("b", "c"),
-de: RegisterPair("d", "e"),
-hl: RegisterPair("h", "l"),
+b: u8,
+c: u8,
+d: u8,
+e: u8,
+h: u8,
+l: u8,
 
 // alternate registers
-af_: RegisterPair("a_", "f_"),
-bc_: RegisterPair("b_", "c_"),
-de_: RegisterPair("d_", "e_"),
-hl_: RegisterPair("h_", "l_"),
+af_: u16,
+bc_: u16,
+de_: u16,
+hl_: u16,
 
 // index register
 ix: u16,
@@ -88,15 +63,17 @@ pub fn init() Z80 {
 
         .a = 0xff,
         .f = .{ .b = 0xff },
+        .b = 0,
+        .c = 0,
+        .d = 0,
+        .e = 0,
+        .h = 0,
+        .l = 0,
 
-        .bc = .{ .w = 0 },
-        .de = .{ .w = 0 },
-        .hl = .{ .w = 0 },
-
-        .af_ = .{ .w = 0 },
-        .bc_ = .{ .w = 0 },
-        .de_ = .{ .w = 0 },
-        .hl_ = .{ .w = 0 },
+        .af_ = 0,
+        .bc_ = 0,
+        .de_ = 0,
+        .hl_ = 0,
 
         .ix = 0,
         .iy = 0,
@@ -105,7 +82,7 @@ pub fn init() Z80 {
         .r = 0,
 
         .pc = 0,
-        .sp = 0xff,
+        .sp = 0xffff,
 
         .iff1 = false,
         .iff2 = false,
