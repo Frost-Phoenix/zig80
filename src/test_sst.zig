@@ -76,7 +76,7 @@ const TestConfig = struct {
 
 // ********** private functions ********** //
 
-fn parseTestConfig(allocator: Allocator, path: []const u8) !json.Parsed(TestConfig) {
+fn parseTestConfig(allocator: Allocator, path: []const u8) !json.Parsed([]TestConfig) {
     const file = try std.fs.cwd().openFile(path, .{ .mode = .read_only });
     defer file.close();
 
@@ -84,10 +84,15 @@ fn parseTestConfig(allocator: Allocator, path: []const u8) !json.Parsed(TestConf
     var reader = std.json.reader(allocator, buffered.reader());
     defer reader.deinit();
 
-    const parsed = try std.json.parseFromTokenSource(TestConfig, allocator, &reader, .{
-        .allocate = .alloc_always,
-        .ignore_unknown_fields = true,
-    });
+    const parsed = try std.json.parseFromTokenSource(
+        []TestConfig,
+        allocator,
+        &reader,
+        .{
+            .allocate = .alloc_always,
+            .ignore_unknown_fields = true,
+        },
+    );
 
     return parsed;
 }
@@ -167,6 +172,55 @@ fn expectState(z: *Z80, config: TestConfig) !void {
     }
 }
 
+fn runTest(z: *Z80, configs: []TestConfig, test_name: []const u8) !void {
+    for (configs) |config| {
+        setZ80State(z, config);
+
+        z.step() catch |err| switch (err) {
+            Z80.Z80Error.UnknownOpcode => {
+                log.warn("Test \"{s}\": skipped (unknown opcode)", .{test_name});
+
+                return;
+            },
+            else => return err,
+        };
+
+        try expectState(z, config);
+    }
+
+    log.info("Test \"{s}\": passed", .{test_name});
+}
+
+fn runAll(allocator: Allocator) !void {
+    var z: Z80 = .init();
+
+    const base_path = "./tests/sst/";
+
+    const dir = try std.fs.cwd().openDir(base_path, .{
+        .access_sub_paths = false,
+        .iterate = true,
+    });
+
+    var walker = try dir.walk(allocator);
+    defer walker.deinit();
+
+    while (try walker.next()) |file| {
+        const file_name = file.basename;
+        const file_name_no_extention = file_name[0 .. file_name.len - 5];
+        const file_path = try std.mem.concat(allocator, u8, &[_][]const u8{
+            base_path,
+            file_name,
+        });
+        defer allocator.free(file_path);
+
+        const parsed_configs = try parseTestConfig(allocator, file_path);
+        defer parsed_configs.deinit();
+        const configs = parsed_configs.value;
+
+        try runTest(&z, configs, file_name_no_extention);
+    }
+}
+
 // ********** public functions ********** //
 
 pub fn main() !void {
@@ -176,17 +230,5 @@ pub fn main() !void {
 
     log.info("Z80 Single Step Tests", .{});
 
-    var z: Z80 = .init();
-
-    const path = "./tests/test.json";
-
-    const parsed_config = try parseTestConfig(allocator, path);
-    defer parsed_config.deinit();
-    const config = parsed_config.value;
-
-    setZ80State(&z, config);
-    z.step();
-    try expectState(&z, config);
-
-    log.info("Test \"{s}\": passed", .{config.name});
+    try runAll(allocator);
 }

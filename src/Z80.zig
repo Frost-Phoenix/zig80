@@ -20,6 +20,10 @@ const Flags = packed union {
     },
 };
 
+pub const Z80Error = error{
+    UnknownOpcode,
+};
+
 // ********** Z80 ********** //
 
 memory: [65536]u8,
@@ -94,10 +98,10 @@ pub fn init() Z80 {
     };
 }
 
-pub fn step(z: *Z80) void {
+pub fn step(z: *Z80) Z80Error!void {
     const opcode = z.nextb();
 
-    z.exec_opcode(opcode);
+    try z.exec_opcode(opcode);
 }
 
 // ********** register helper functions ********** //
@@ -166,7 +170,7 @@ fn nextw(z: *Z80) u16 {
 
 // ********** private functions ********** //
 
-fn exec_opcode(z: *Z80, opcode: u8) void {
+fn exec_opcode(z: *Z80, opcode: u8) Z80Error!void {
     switch (opcode) {
         0x00 => {}, // nop
 
@@ -270,8 +274,6 @@ fn exec_opcode(z: *Z80, opcode: u8) void {
         0x31 => z.sp = z.nextw(), // ld sp, nn
         0xf9 => z.sp = z.getHL(), // ld sp, hl
 
-        else => {
-            @panic("unknown opcode");
-        },
+        else => return Z80Error.UnknownOpcode,
     }
 }
