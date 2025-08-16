@@ -9,14 +9,14 @@ const std = @import("std");
 const Flags = packed union {
     b: u8,
     f: packed struct(u8) {
-        s: bool,
-        z: bool,
-        y: bool,
-        h: bool,
-        x: bool,
-        p: bool,
-        n: bool,
         c: bool,
+        n: bool,
+        pv: bool,
+        x: bool,
+        h: bool,
+        y: bool,
+        z: bool,
+        s: bool,
     },
 };
 
