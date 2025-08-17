@@ -11,6 +11,10 @@ const Allocator = std.mem.Allocator;
 
 const expectEqual = std.testing.expectEqual;
 
+// ********** global var ********** //
+
+var ignore_unknown_opcodes_warnig: bool = false;
+
 // ********** types ********** //
 
 const TestConfig = struct {
@@ -178,14 +182,20 @@ fn runTest(z: *Z80, configs: []TestConfig, test_name: []const u8) !void {
 
         z.step() catch |err| switch (err) {
             Z80.Z80Error.UnknownOpcode => {
-                log.warn("Test \"{s}\": skipped (unknown opcode)", .{test_name});
+                if (!ignore_unknown_opcodes_warnig) {
+                    log.warn("Test \"{s}\": skipped (unknown opcode)", .{test_name});
+                }
 
                 return;
             },
             else => return err,
         };
 
-        try expectState(z, config);
+        expectState(z, config) catch |err| {
+            std.log.err("Test \"{s}\": failed", .{config.name});
+
+            return err;
+        };
     }
 
     log.info("Test \"{s}\": passed", .{test_name});
@@ -227,6 +237,13 @@ pub fn main() !void {
     var gpa: std.heap.GeneralPurposeAllocator(.{}) = .init;
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
+
+    const args = try std.process.argsAlloc(allocator);
+    defer std.process.argsFree(allocator, args);
+
+    if (args.len >= 2 and std.mem.eql(u8, args[1], "--ignore-unknown-opcodes")) {
+        ignore_unknown_opcodes_warnig = true;
+    }
 
     log.info("Z80 Single Step Tests", .{});
 
