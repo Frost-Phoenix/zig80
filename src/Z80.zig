@@ -172,10 +172,6 @@ fn getBit(n: u3, val: u8) u1 {
     return @truncate((val >> n) & 1);
 }
 
-fn halfCarry(val: u8) bool {
-    return (@as(u4, @truncate(val & 0b1111)) +% 1) == 0;
-}
-
 // ********** private functions ********** //
 
 fn inc(z: *Z80, val: u8) u8 {
@@ -184,7 +180,21 @@ fn inc(z: *Z80, val: u8) u8 {
     z.f.f.n = false;
     z.f.f.pv = val == 0x7f;
     z.f.f.x = getBit(3, res) == 1;
-    z.f.f.h = halfCarry(val);
+    z.f.f.h = val & 0x0f == 0x0f;
+    z.f.f.y = getBit(5, res) == 1;
+    z.f.f.z = res == 0;
+    z.f.f.s = (res >> 7) == 1;
+
+    return res;
+}
+
+fn dec(z: *Z80, val: u8) u8 {
+    const res = val -% 1;
+
+    z.f.f.n = true;
+    z.f.f.pv = val == 0x80;
+    z.f.f.x = getBit(3, res) == 1;
+    z.f.f.h = val & 0x0f == 0x00;
     z.f.f.y = getBit(5, res) == 1;
     z.f.f.z = res == 0;
     z.f.f.s = (res >> 7) == 1;
@@ -310,6 +320,21 @@ fn exec_opcode(z: *Z80, opcode: u8) Z80Error!void {
         0x13 => z.setDE(z.getDE() + 1), // inc de
         0x23 => z.setHL(z.getHL() + 1), // inc hl
         0x33 => z.sp +%= 1, // inc sp
+
+        0x3d => z.a = z.dec(z.a), // dec a
+        0x05 => z.b = z.dec(z.b), // dec b
+        0x0d => z.c = z.dec(z.c), // dec c
+        0x15 => z.d = z.dec(z.d), // dec d
+        0x1d => z.e = z.dec(z.e), // dec e
+        0x25 => z.h = z.dec(z.h), // dec h
+        0x2d => z.l = z.dec(z.l), // dec l
+
+        0x35 => z.wb(z.getHL(), z.dec(z.rb(z.getHL()))), // dec (hl)
+
+        0x0b => z.setBC(z.getBC() - 1), // dec bc
+        0x1b => z.setDE(z.getDE() - 1), // dec de
+        0x2b => z.setHL(z.getHL() - 1), // dec hl
+        0x3b => z.sp -%= 1, // dec sp
 
         else => return Z80Error.UnknownOpcode,
     }
