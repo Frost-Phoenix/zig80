@@ -168,8 +168,15 @@ fn nextw(z: *Z80) u16 {
     return val;
 }
 
-fn getBit(n: u3, val: u8) u1 {
+fn getBit(n: u5, val: u32) u1 {
     return @truncate((val >> n) & 1);
+}
+
+fn carry(bit: u5, a: u16, b: u16, cf: u1) bool {
+    const res: u32 = @as(u32, a) + @as(u32, b) + cf;
+    const c: u32 = res ^ a ^ b;
+
+    return getBit(bit, c) == 1;
 }
 
 // ********** private functions ********** //
@@ -184,6 +191,50 @@ fn inc(z: *Z80, val: u8) u8 {
     z.f.f.y = getBit(5, res) == 1;
     z.f.f.z = res == 0;
     z.f.f.s = (res >> 7) == 1;
+
+    return res;
+}
+
+fn add(z: *Z80, a: u8, b: u8) u8 {
+    const res = a +% b;
+
+    z.f.f.c = carry(8, a, b, 0);
+    z.f.f.n = false;
+    z.f.f.pv = (a & 0x80 == b & 0x80) and (a & 0x80 != res & 0x80);
+    z.f.f.x = getBit(3, res) == 1;
+    z.f.f.h = carry(4, a, b, 0);
+    z.f.f.y = getBit(5, res) == 1;
+    z.f.f.z = res == 0;
+    z.f.f.s = (res >> 7) == 1;
+
+    return res;
+}
+
+fn adc(z: *Z80, a: u8, b: u8) u8 {
+    const res = a +% b +% @intFromBool(z.f.f.c);
+
+    const old_cf = @intFromBool(z.f.f.c);
+
+    z.f.f.c = carry(8, a, b, old_cf);
+    z.f.f.n = false;
+    z.f.f.pv = (a & 0x80 == b & 0x80) and (a & 0x80 != res & 0x80);
+    z.f.f.x = getBit(3, res) == 1;
+    z.f.f.h = carry(4, a, b, old_cf);
+    z.f.f.y = getBit(5, res) == 1;
+    z.f.f.z = res == 0;
+    z.f.f.s = (res >> 7) == 1;
+
+    return res;
+}
+
+fn addw(z: *Z80, a: u16, b: u16) u16 {
+    const res = a +% b;
+
+    z.f.f.c = carry(16, a, b, 0);
+    z.f.f.n = false;
+    z.f.f.x = getBit(11, res) == 1;
+    z.f.f.h = carry(12, a, b, 0);
+    z.f.f.y = getBit(13, res) == 1;
 
     return res;
 }
@@ -314,12 +365,39 @@ fn exec_opcode(z: *Z80, opcode: u8) Z80Error!void {
         0x24 => z.h = z.inc(z.h), // inc h
         0x2c => z.l = z.inc(z.l), // inc l
 
-        0x34 => z.wb(z.getHL(), z.inc(z.rb(z.getHL()))), // inc (hl)
-
         0x03 => z.setBC(z.getBC() + 1), // inc bc
         0x13 => z.setDE(z.getDE() + 1), // inc de
         0x23 => z.setHL(z.getHL() + 1), // inc hl
         0x33 => z.sp +%= 1, // inc sp
+
+        0x34 => z.wb(z.getHL(), z.inc(z.rb(z.getHL()))), // inc (hl)
+
+        0x87 => z.a = z.add(z.a, z.a), // add a, a
+        0x80 => z.a = z.add(z.a, z.b), // add a, b
+        0x81 => z.a = z.add(z.a, z.c), // add a, c
+        0x82 => z.a = z.add(z.a, z.d), // add a, d
+        0x83 => z.a = z.add(z.a, z.e), // add a, e
+        0x84 => z.a = z.add(z.a, z.h), // add a, h
+        0x85 => z.a = z.add(z.a, z.l), // add a, l
+
+        0x09 => z.setHL(z.addw(z.getHL(), z.getBC())), // add hl, bc
+        0x19 => z.setHL(z.addw(z.getHL(), z.getDE())), // add hl, de
+        0x29 => z.setHL(z.addw(z.getHL(), z.getHL())), // add hl, hl
+        0x39 => z.setHL(z.addw(z.getHL(), z.sp)), // add hl, sp
+
+        0xc6 => z.a = z.add(z.a, z.nextb()), // add a, n
+        0x86 => z.a = z.add(z.a, z.rb(z.getHL())), // add a, (hl)
+
+        0x8f => z.a = z.adc(z.a, z.a), // adc a, a
+        0x88 => z.a = z.adc(z.a, z.b), // adc a, b
+        0x89 => z.a = z.adc(z.a, z.c), // adc a, c
+        0x8a => z.a = z.adc(z.a, z.d), // adc a, d
+        0x8b => z.a = z.adc(z.a, z.e), // adc a, e
+        0x8c => z.a = z.adc(z.a, z.h), // adc a, h
+        0x8d => z.a = z.adc(z.a, z.l), // adc a, l
+
+        0xce => z.a = z.adc(z.a, z.nextb()), // adc a, n
+        0x8e => z.a = z.adc(z.a, z.rb(z.getHL())), // adc a, (hl)
 
         0x3d => z.a = z.dec(z.a), // dec a
         0x05 => z.b = z.dec(z.b), // dec b
@@ -329,12 +407,12 @@ fn exec_opcode(z: *Z80, opcode: u8) Z80Error!void {
         0x25 => z.h = z.dec(z.h), // dec h
         0x2d => z.l = z.dec(z.l), // dec l
 
-        0x35 => z.wb(z.getHL(), z.dec(z.rb(z.getHL()))), // dec (hl)
-
         0x0b => z.setBC(z.getBC() - 1), // dec bc
         0x1b => z.setDE(z.getDE() - 1), // dec de
         0x2b => z.setHL(z.getHL() - 1), // dec hl
         0x3b => z.sp -%= 1, // dec sp
+
+        0x35 => z.wb(z.getHL(), z.dec(z.rb(z.getHL()))), // dec (hl)
 
         else => return Z80Error.UnknownOpcode,
     }
