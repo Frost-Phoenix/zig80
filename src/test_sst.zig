@@ -4,7 +4,7 @@ const Z80 = @import("Z80.zig");
 
 const std = @import("std");
 
-const log = std.log;
+const log = std.log.scoped(.sst);
 const json = std.json;
 
 const Allocator = std.mem.Allocator;
@@ -176,14 +176,16 @@ fn expectState(z: *Z80, config: TestConfig) !void {
     }
 }
 
-fn runTest(z: *Z80, configs: []TestConfig, test_name: []const u8) !void {
+fn runTest(configs: []TestConfig, test_name: []const u8) !void {
+    var z: Z80 = .init();
+
     for (configs) |config| {
-        setZ80State(z, config);
+        setZ80State(&z, config);
 
         z.step() catch |err| switch (err) {
             Z80.Z80Error.UnknownOpcode => {
                 if (!ignore_unknown_opcodes_warnig) {
-                    log.warn("Test \"{s}\": skipped (unknown opcode)", .{test_name});
+                    log.warn("skipped (unknown opcode): \"{s}\"", .{test_name});
                 }
 
                 return;
@@ -191,19 +193,28 @@ fn runTest(z: *Z80, configs: []TestConfig, test_name: []const u8) !void {
             else => return err,
         };
 
-        expectState(z, config) catch |err| {
-            std.log.err("Test \"{s}\": failed", .{config.name});
+        expectState(&z, config) catch |err| {
+            log.err("failed: \"{s}\"", .{config.name});
 
             return err;
         };
     }
+    log.info("passed: \"{s}\"", .{test_name});
+}
 
-    log.info("Test \"{s}\": passed", .{test_name});
+fn processFile(allocator: Allocator, file_path: []const u8) !void {
+    const base_name = std.fs.path.basename(file_path);
+    const ext = ".json";
+    const test_name = base_name[0 .. base_name.len - ext.len];
+
+    const parsed_configs = try parseTestConfig(allocator, file_path);
+    defer parsed_configs.deinit();
+    const configs = parsed_configs.value;
+
+    try runTest(configs, test_name);
 }
 
 fn runAll(allocator: Allocator) !void {
-    var z: Z80 = .init();
-
     const base_path = "./tests/sst/";
 
     const dir = try std.fs.cwd().openDir(base_path, .{
@@ -216,18 +227,13 @@ fn runAll(allocator: Allocator) !void {
 
     while (try walker.next()) |file| {
         const file_name = file.basename;
-        const file_name_no_extention = file_name[0 .. file_name.len - 5];
         const file_path = try std.mem.concat(allocator, u8, &[_][]const u8{
             base_path,
             file_name,
         });
         defer allocator.free(file_path);
 
-        const parsed_configs = try parseTestConfig(allocator, file_path);
-        defer parsed_configs.deinit();
-        const configs = parsed_configs.value;
-
-        try runTest(&z, configs, file_name_no_extention);
+        try processFile(allocator, file_path);
     }
 }
 
@@ -238,14 +244,18 @@ pub fn main() !void {
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
+    log.info("Z80 Single Step Tests", .{});
+
     const args = try std.process.argsAlloc(allocator);
     defer std.process.argsFree(allocator, args);
 
-    if (args.len >= 2 and std.mem.eql(u8, args[1], "--ignore-unknown-opcodes")) {
+    if (args.len == 2 and std.mem.eql(u8, args[1], "--ignore-unknown")) {
         ignore_unknown_opcodes_warnig = true;
     }
 
-    log.info("Z80 Single Step Tests", .{});
-
-    try runAll(allocator);
+    if (args.len == 3 and std.mem.eql(u8, args[1], "--run")) {
+        try processFile(allocator, args[2]);
+    } else {
+        try runAll(allocator);
+    }
 }
