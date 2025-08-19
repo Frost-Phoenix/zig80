@@ -4,7 +4,7 @@ const Z80 = @import("Z80.zig");
 
 const std = @import("std");
 
-const log = std.log.scoped(.sst);
+const log = std.log;
 const json = std.json;
 
 const Allocator = std.mem.Allocator;
@@ -78,7 +78,23 @@ const TestConfig = struct {
     // cycles
 };
 
+const TestStatus = enum {
+    passed,
+    skipped,
+    failed,
+};
+
 // ********** private functions ********** //
+
+fn sst_log(comptime status: TestStatus, test_name: []const u8) void {
+    const status_txt, const logFn = switch (status) {
+        .passed => .{ "\x1b[32m" ++ @tagName(status) ++ "\x1b[0m", log.info },
+        .skipped => .{ "\x1b[33m" ++ @tagName(status) ++ "\x1b[0m", log.warn },
+        .failed => .{ "\x1b[31m" ++ @tagName(status) ++ "\x1b[0m", log.err },
+    };
+
+    logFn(status_txt ++ ": \"{s}\"", .{test_name});
+}
 
 fn parseTestConfig(allocator: Allocator, path: []const u8) !json.Parsed([]TestConfig) {
     const file = try std.fs.cwd().openFile(path, .{ .mode = .read_only });
@@ -185,7 +201,7 @@ fn runTest(configs: []TestConfig, test_name: []const u8) !void {
         z.step() catch |err| switch (err) {
             Z80.Z80Error.UnknownOpcode => {
                 if (!ignore_unknown_opcodes_warnig) {
-                    log.warn("skipped (unknown opcode): \"{s}\"", .{test_name});
+                    sst_log(.skipped, test_name);
                 }
 
                 return;
@@ -194,12 +210,13 @@ fn runTest(configs: []TestConfig, test_name: []const u8) !void {
         };
 
         expectState(&z, config) catch |err| {
-            log.err("failed: \"{s}\"", .{config.name});
+            sst_log(.failed, config.name);
 
             return err;
         };
     }
-    log.info("passed: \"{s}\"", .{test_name});
+
+    sst_log(.passed, test_name);
 }
 
 fn processFile(allocator: Allocator, file_path: []const u8) !void {
