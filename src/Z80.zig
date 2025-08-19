@@ -184,6 +184,18 @@ fn carry(bit: u5, a: u16, b: u16, cf: u1) bool {
     return getBit(bit, c) == 1;
 }
 
+fn parity(val: u8) bool {
+    var nb: u8 = 0;
+
+    for (0..8) |i| {
+        const bit: u3 = @intCast(i);
+
+        nb += (val >> bit) & 1;
+    }
+
+    return nb % 2 == 0;
+}
+
 // ********** private functions ********** //
 
 fn inc(z: *Z80, val: u8) u8 {
@@ -281,6 +293,51 @@ fn sbc(z: *Z80, a: u8, b: u8) u8 {
     z.f.pv = (a & 0x80 != b & 0x80) and (a & 0x80 != res & 0x80);
     z.f.x = getBit(3, res) == 1;
     z.f.h = @as(u9, a & 0xf) < @as(u9, b & 0xf) + carry_in;
+    z.f.y = getBit(5, res) == 1;
+    z.f.z = res == 0;
+    z.f.s = (res >> 7) == 1;
+
+    return res;
+}
+
+fn land(z: *Z80, val: u8) u8 {
+    const res = z.a & val;
+
+    z.f.c = false;
+    z.f.n = false;
+    z.f.pv = parity(res);
+    z.f.x = getBit(3, res) == 1;
+    z.f.h = true;
+    z.f.y = getBit(5, res) == 1;
+    z.f.z = res == 0;
+    z.f.s = (res >> 7) == 1;
+
+    return res;
+}
+
+fn lxor(z: *Z80, val: u8) u8 {
+    const res = z.a ^ val;
+
+    z.f.c = false;
+    z.f.n = false;
+    z.f.pv = parity(res);
+    z.f.x = getBit(3, res) == 1;
+    z.f.h = false;
+    z.f.y = getBit(5, res) == 1;
+    z.f.z = res == 0;
+    z.f.s = (res >> 7) == 1;
+
+    return res;
+}
+
+fn lor(z: *Z80, val: u8) u8 {
+    const res = z.a | val;
+
+    z.f.c = false;
+    z.f.n = false;
+    z.f.pv = parity(res);
+    z.f.x = getBit(3, res) == 1;
+    z.f.h = false;
     z.f.y = getBit(5, res) == 1;
     z.f.z = res == 0;
     z.f.s = (res >> 7) == 1;
@@ -470,6 +527,39 @@ fn exec_opcode(z: *Z80, opcode: u8) Z80Error!void {
 
         0xde => z.a = z.sbc(z.a, z.nextb()), // sbc a, n
         0x9e => z.a = z.sbc(z.a, z.rb(z.getHL())), // sbc a, (hl)
+
+        0xa7 => z.a = z.land(z.a), // and a
+        0xa0 => z.a = z.land(z.b), // and b
+        0xa1 => z.a = z.land(z.c), // and c
+        0xa2 => z.a = z.land(z.d), // and d
+        0xa3 => z.a = z.land(z.e), // and e
+        0xa4 => z.a = z.land(z.h), // and h
+        0xa5 => z.a = z.land(z.l), // and l
+
+        0xe6 => z.a = z.land(z.nextb()), // and n
+        0xa6 => z.a = z.land(z.rb(z.getHL())), // and (hl)
+
+        0xa8 => z.a = z.lxor(z.b), // xor b
+        0xaf => z.a = z.lxor(z.a), // xor a
+        0xa9 => z.a = z.lxor(z.c), // xor c
+        0xaa => z.a = z.lxor(z.d), // xor d
+        0xab => z.a = z.lxor(z.e), // xor e
+        0xac => z.a = z.lxor(z.h), // xor h
+        0xad => z.a = z.lxor(z.l), // xor l
+
+        0xee => z.a = z.lxor(z.nextb()), // xor n
+        0xae => z.a = z.lxor(z.rb(z.getHL())), // xor (hl)
+
+        0xb7 => z.a = z.lor(z.a), // or a
+        0xb0 => z.a = z.lor(z.b), // or b
+        0xb1 => z.a = z.lor(z.c), // or c
+        0xb2 => z.a = z.lor(z.d), // or d
+        0xb3 => z.a = z.lor(z.e), // or e
+        0xb4 => z.a = z.lor(z.h), // or h
+        0xb5 => z.a = z.lor(z.l), // or l
+
+        0xf6 => z.a = z.lor(z.nextb()), // or n
+        0xb6 => z.a = z.lor(z.rb(z.getHL())), // or (hl)
 
         else => return Z80Error.UnknownOpcode,
     }
