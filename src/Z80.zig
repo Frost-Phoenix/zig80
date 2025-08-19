@@ -196,6 +196,13 @@ fn parity(val: u8) bool {
     return nb % 2 == 0;
 }
 
+fn swap(a: *u16, b: *u16) void {
+    const tmp = a.*;
+
+    a.* = b.*;
+    b.* = tmp;
+}
+
 // ********** private functions ********** //
 
 fn inc(z: *Z80, val: u8) u8 {
@@ -560,6 +567,46 @@ fn exec_opcode(z: *Z80, opcode: u8) Z80Error!void {
 
         0xf6 => z.a = z.lor(z.nextb()), // or n
         0xb6 => z.a = z.lor(z.rb(z.getHL())), // or (hl)
+
+        0xd9 => {
+            var bc: u16 = z.getBC();
+            var de: u16 = z.getDE();
+            var hl: u16 = z.getHL();
+
+            swap(&bc, &z.bc_);
+            swap(&de, &z.de_);
+            swap(&hl, &z.hl_);
+
+            z.setBC(bc);
+            z.setDE(de);
+            z.setHL(hl);
+        }, // exx
+        0xeb => {
+            var de: u16 = z.getDE();
+            var hl: u16 = z.getHL();
+
+            swap(&de, &hl);
+
+            z.setDE(de);
+            z.setHL(hl);
+        }, // ex de, hl
+        0x08 => {
+            var af: u16 = (@as(u16, z.a) << 8) | z.f.getF();
+
+            swap(&af, &z.af_);
+
+            z.f.setF(@truncate(af));
+            z.a = @truncate(af >> 8);
+        }, // ex af, af'
+        0xe3 => {
+            var val: u16 = z.rw(z.sp);
+            var hl: u16 = z.getHL();
+
+            swap(&val, &hl);
+
+            z.ww(z.sp, val);
+            z.setHL(hl);
+        }, // ex (sp), hl
 
         else => return Z80Error.UnknownOpcode,
     }
