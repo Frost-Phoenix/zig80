@@ -6,18 +6,23 @@ const std = @import("std");
 
 // ********** types ********** //
 
-const Flags = packed union {
-    b: u8,
-    f: packed struct(u8) {
-        c: bool,
-        n: bool,
-        pv: bool,
-        x: bool,
-        h: bool,
-        y: bool,
-        z: bool,
-        s: bool,
-    },
+const Flags = packed struct(u8) {
+    c: bool,
+    n: bool,
+    pv: bool,
+    x: bool,
+    h: bool,
+    y: bool,
+    z: bool,
+    s: bool,
+
+    pub fn getF(f: *Flags) u8 {
+        return @bitCast(f.*);
+    }
+
+    pub fn setF(f: *Flags, val: u8) void {
+        f.* = @bitCast(val);
+    }
 };
 
 pub const Z80Error = error{
@@ -69,7 +74,7 @@ pub fn init() Z80 {
         .memory = [_]u8{0} ** (1 << 16),
 
         .a = 0xff,
-        .f = .{ .b = 0xff },
+        .f = @bitCast(@as(u8, 0xff)),
         .b = 0,
         .c = 0,
         .d = 0,
@@ -184,13 +189,13 @@ fn carry(bit: u5, a: u16, b: u16, cf: u1) bool {
 fn inc(z: *Z80, val: u8) u8 {
     const res = val +% 1;
 
-    z.f.f.n = false;
-    z.f.f.pv = val == 0x7f;
-    z.f.f.x = getBit(3, res) == 1;
-    z.f.f.h = val & 0x0f == 0x0f;
-    z.f.f.y = getBit(5, res) == 1;
-    z.f.f.z = res == 0;
-    z.f.f.s = (res >> 7) == 1;
+    z.f.n = false;
+    z.f.pv = val == 0x7f;
+    z.f.x = getBit(3, res) == 1;
+    z.f.h = val & 0x0f == 0x0f;
+    z.f.y = getBit(5, res) == 1;
+    z.f.z = res == 0;
+    z.f.s = (res >> 7) == 1;
 
     return res;
 }
@@ -198,31 +203,30 @@ fn inc(z: *Z80, val: u8) u8 {
 fn add(z: *Z80, a: u8, b: u8) u8 {
     const res = a +% b;
 
-    z.f.f.c = carry(8, a, b, 0);
-    z.f.f.n = false;
-    z.f.f.pv = (a & 0x80 == b & 0x80) and (a & 0x80 != res & 0x80);
-    z.f.f.x = getBit(3, res) == 1;
-    z.f.f.h = carry(4, a, b, 0);
-    z.f.f.y = getBit(5, res) == 1;
-    z.f.f.z = res == 0;
-    z.f.f.s = (res >> 7) == 1;
+    z.f.c = carry(8, a, b, 0);
+    z.f.n = false;
+    z.f.pv = (a & 0x80 == b & 0x80) and (a & 0x80 != res & 0x80);
+    z.f.x = getBit(3, res) == 1;
+    z.f.h = carry(4, a, b, 0);
+    z.f.y = getBit(5, res) == 1;
+    z.f.z = res == 0;
+    z.f.s = (res >> 7) == 1;
 
     return res;
 }
 
 fn adc(z: *Z80, a: u8, b: u8) u8 {
-    const res = a +% b +% @intFromBool(z.f.f.c);
+    const carry_in = @intFromBool(z.f.c);
+    const res = a +% b +% carry_in;
 
-    const old_cf = @intFromBool(z.f.f.c);
-
-    z.f.f.c = carry(8, a, b, old_cf);
-    z.f.f.n = false;
-    z.f.f.pv = (a & 0x80 == b & 0x80) and (a & 0x80 != res & 0x80);
-    z.f.f.x = getBit(3, res) == 1;
-    z.f.f.h = carry(4, a, b, old_cf);
-    z.f.f.y = getBit(5, res) == 1;
-    z.f.f.z = res == 0;
-    z.f.f.s = (res >> 7) == 1;
+    z.f.c = carry(8, a, b, carry_in);
+    z.f.n = false;
+    z.f.pv = (a & 0x80 == b & 0x80) and (a & 0x80 != res & 0x80);
+    z.f.x = getBit(3, res) == 1;
+    z.f.h = carry(4, a, b, carry_in);
+    z.f.y = getBit(5, res) == 1;
+    z.f.z = res == 0;
+    z.f.s = (res >> 7) == 1;
 
     return res;
 }
@@ -230,11 +234,11 @@ fn adc(z: *Z80, a: u8, b: u8) u8 {
 fn addw(z: *Z80, a: u16, b: u16) u16 {
     const res = a +% b;
 
-    z.f.f.c = carry(16, a, b, 0);
-    z.f.f.n = false;
-    z.f.f.x = getBit(11, res) == 1;
-    z.f.f.h = carry(12, a, b, 0);
-    z.f.f.y = getBit(13, res) == 1;
+    z.f.c = carry(16, a, b, 0);
+    z.f.n = false;
+    z.f.x = getBit(11, res) == 1;
+    z.f.h = carry(12, a, b, 0);
+    z.f.y = getBit(13, res) == 1;
 
     return res;
 }
@@ -242,13 +246,44 @@ fn addw(z: *Z80, a: u16, b: u16) u16 {
 fn dec(z: *Z80, val: u8) u8 {
     const res = val -% 1;
 
-    z.f.f.n = true;
-    z.f.f.pv = val == 0x80;
-    z.f.f.x = getBit(3, res) == 1;
-    z.f.f.h = val & 0x0f == 0x00;
-    z.f.f.y = getBit(5, res) == 1;
-    z.f.f.z = res == 0;
-    z.f.f.s = (res >> 7) == 1;
+    z.f.n = true;
+    z.f.pv = val == 0x80;
+    z.f.x = getBit(3, res) == 1;
+    z.f.h = val & 0x0f == 0x00;
+    z.f.y = getBit(5, res) == 1;
+    z.f.z = res == 0;
+    z.f.s = (res >> 7) == 1;
+
+    return res;
+}
+
+fn sub(z: *Z80, a: u8, b: u8) u8 {
+    const res = a -% b;
+
+    z.f.c = a < b;
+    z.f.n = true;
+    z.f.pv = (a & 0x80 != b & 0x80) and (a & 0x80 != res & 0x80);
+    z.f.x = getBit(3, res) == 1;
+    z.f.h = (a & 0xf) < (b & 0xf);
+    z.f.y = getBit(5, res) == 1;
+    z.f.z = res == 0;
+    z.f.s = (res >> 7) == 1;
+
+    return res;
+}
+
+fn sbc(z: *Z80, a: u8, b: u8) u8 {
+    const carry_in = @intFromBool(z.f.c);
+    const res = a -% b -% carry_in;
+
+    z.f.c = @as(u9, a) < @as(u9, b) + carry_in;
+    z.f.n = true;
+    z.f.pv = (a & 0x80 != b & 0x80) and (a & 0x80 != res & 0x80);
+    z.f.x = getBit(3, res) == 1;
+    z.f.h = @as(u9, a & 0xf) < @as(u9, b & 0xf) + carry_in;
+    z.f.y = getBit(5, res) == 1;
+    z.f.z = res == 0;
+    z.f.s = (res >> 7) == 1;
 
     return res;
 }
@@ -413,6 +448,28 @@ fn exec_opcode(z: *Z80, opcode: u8) Z80Error!void {
         0x3b => z.sp -%= 1, // dec sp
 
         0x35 => z.wb(z.getHL(), z.dec(z.rb(z.getHL()))), // dec (hl)
+
+        0x97 => z.a = z.sub(z.a, z.a), // sub a
+        0x90 => z.a = z.sub(z.a, z.b), // sub b
+        0x91 => z.a = z.sub(z.a, z.c), // sub c
+        0x92 => z.a = z.sub(z.a, z.d), // sub d
+        0x93 => z.a = z.sub(z.a, z.e), // sub e
+        0x94 => z.a = z.sub(z.a, z.h), // sub h
+        0x95 => z.a = z.sub(z.a, z.l), // sub l
+
+        0xd6 => z.a = z.sub(z.a, z.nextb()), // sub n
+        0x96 => z.a = z.sub(z.a, z.rb(z.getHL())), // sub (hl)
+
+        0x9f => z.a = z.sbc(z.a, z.a), // sbc a, a
+        0x98 => z.a = z.sbc(z.a, z.b), // sbc a, b
+        0x99 => z.a = z.sbc(z.a, z.c), // sbc a, c
+        0x9a => z.a = z.sbc(z.a, z.d), // sbc a, d
+        0x9b => z.a = z.sbc(z.a, z.e), // sbc a, e
+        0x9c => z.a = z.sbc(z.a, z.h), // sbc a, h
+        0x9d => z.a = z.sbc(z.a, z.l), // sbc a, l
+
+        0xde => z.a = z.sbc(z.a, z.nextb()), // sbc a, n
+        0x9e => z.a = z.sbc(z.a, z.rb(z.getHL())), // sbc a, (hl)
 
         else => return Z80Error.UnknownOpcode,
     }

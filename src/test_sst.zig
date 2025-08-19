@@ -108,7 +108,7 @@ fn setZ80State(z: *Z80, config: TestConfig) void {
     z.sp = init.sp;
 
     z.a = init.a;
-    z.f.b = init.f;
+    z.f.setF(init.f);
 
     z.b = init.b;
     z.c = init.c;
@@ -146,7 +146,7 @@ fn expectState(z: *Z80, config: TestConfig) !void {
     try expectEqual(fin.sp, z.sp);
 
     try expectEqual(fin.a, z.a);
-    try expectEqual(fin.f, z.f.b);
+    try expectEqual(fin.f, z.f.getF());
     try expectEqual(fin.b, z.b);
     try expectEqual(fin.c, z.c);
     try expectEqual(fin.d, z.d);
@@ -217,10 +217,16 @@ fn processFile(allocator: Allocator, file_path: []const u8) !void {
 fn runAll(allocator: Allocator) !void {
     const base_path = "./tests/sst/";
 
-    const dir = try std.fs.cwd().openDir(base_path, .{
+    const dir = std.fs.cwd().openDir(base_path, .{
         .access_sub_paths = false,
         .iterate = true,
-    });
+    }) catch |err| {
+        if (err == error.FileNotFound) {
+            log.err("failed to open tests dir: \"{s}\"", .{base_path});
+        }
+
+        return err;
+    };
 
     var walker = try dir.walk(allocator);
     defer walker.deinit();
