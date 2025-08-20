@@ -408,6 +408,12 @@ fn call(z: *Z80, addr: u16, condition: bool) void {
     z.pc = addr;
 }
 
+fn ret(z: *Z80, condition: bool) void {
+    if (!condition) return;
+
+    z.pc = z.pop();
+}
+
 fn exec_opcode(z: *Z80, opcode: u8) Z80Error!void {
     switch (opcode) {
         0x00 => {}, // nop
@@ -727,6 +733,18 @@ fn exec_opcode(z: *Z80, opcode: u8) Z80Error!void {
         0xd4 => z.call(z.nextw(), !z.f.c), // call nc, nn
         0xe4 => z.call(z.nextw(), !z.f.pv), // call po, nn
         0xf4 => z.call(z.nextw(), !z.f.s), // call p, nn
+
+        0xc9 => z.ret(true), // ret
+
+        0xc8 => z.ret(z.f.z), // ret z
+        0xd8 => z.ret(z.f.c), // ret c
+        0xe8 => z.ret(z.f.pv), // ret pe
+        0xf8 => z.ret(z.f.s), // ret m
+
+        0xc0 => z.ret(!z.f.z), // ret nz
+        0xd0 => z.ret(!z.f.c), // ret nc
+        0xe0 => z.ret(!z.f.pv), // ret po
+        0xf0 => z.ret(!z.f.s), // ret p
 
         else => return Z80Error.UnknownOpcode,
     }
