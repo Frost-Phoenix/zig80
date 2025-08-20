@@ -352,6 +352,19 @@ fn lor(z: *Z80, val: u8) u8 {
     return res;
 }
 
+fn cp(z: *Z80, val: u8) void {
+    const res = z.a -% val;
+
+    z.f.c = z.a < val;
+    z.f.n = true;
+    z.f.pv = (z.a & 0x80 != val & 0x80) and (z.a & 0x80 != res & 0x80);
+    z.f.x = getBit(3, val) == 1;
+    z.f.h = (z.a & 0xf) < (val & 0xf);
+    z.f.y = getBit(5, val) == 1;
+    z.f.z = res == 0;
+    z.f.s = (res >> 7) == 1;
+}
+
 fn exec_opcode(z: *Z80, opcode: u8) Z80Error!void {
     switch (opcode) {
         0x00 => {}, // nop
@@ -607,6 +620,17 @@ fn exec_opcode(z: *Z80, opcode: u8) Z80Error!void {
             z.ww(z.sp, val);
             z.setHL(hl);
         }, // ex (sp), hl
+
+        0xbf => z.cp(z.a), // cp a
+        0xb8 => z.cp(z.b), // cp b
+        0xb9 => z.cp(z.c), // cp c
+        0xba => z.cp(z.d), // cp d
+        0xbb => z.cp(z.e), // cp e
+        0xbc => z.cp(z.h), // cp h
+        0xbd => z.cp(z.l), // cp l
+
+        0xfe => z.cp(z.nextb()), // cp n
+        0xbe => z.cp(z.rb(z.getHL())), // cp (hl)
 
         else => return Z80Error.UnknownOpcode,
     }
