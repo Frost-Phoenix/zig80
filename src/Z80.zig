@@ -401,6 +401,13 @@ fn jr(z: *Z80, offset: u8, condition: bool) void {
     z.pc +%= @as(u16, @bitCast(@as(i16, offset_signed)));
 }
 
+fn call(z: *Z80, addr: u16, condition: bool) void {
+    if (!condition) return;
+
+    z.push(z.pc);
+    z.pc = addr;
+}
+
 fn exec_opcode(z: *Z80, opcode: u8) Z80Error!void {
     switch (opcode) {
         0x00 => {}, // nop
@@ -708,6 +715,18 @@ fn exec_opcode(z: *Z80, opcode: u8) Z80Error!void {
                 z.jr(addr, true);
             }
         }, // djnz d
+
+        0xcd => z.call(z.nextw(), true), // call nn
+
+        0xcc => z.call(z.nextw(), z.f.z), // call z, nn
+        0xdc => z.call(z.nextw(), z.f.c), // call c, nn
+        0xec => z.call(z.nextw(), z.f.pv), // call pe, nn
+        0xfc => z.call(z.nextw(), z.f.s), // call m, nn
+
+        0xc4 => z.call(z.nextw(), !z.f.z), // call nz, nn
+        0xd4 => z.call(z.nextw(), !z.f.c), // call nc, nn
+        0xe4 => z.call(z.nextw(), !z.f.pv), // call po, nn
+        0xf4 => z.call(z.nextw(), !z.f.s), // call p, nn
 
         else => return Z80Error.UnknownOpcode,
     }
