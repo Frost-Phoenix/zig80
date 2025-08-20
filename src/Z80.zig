@@ -387,6 +387,20 @@ fn pop(z: *Z80) u16 {
     return res;
 }
 
+fn jump(z: *Z80, addr: u16, condition: bool) void {
+    if (!condition) return;
+
+    z.pc = addr;
+}
+
+fn jr(z: *Z80, offset: u8, condition: bool) void {
+    if (!condition) return;
+
+    const offset_signed: i8 = @bitCast(offset);
+
+    z.pc +%= @as(u16, @bitCast(@as(i16, offset_signed)));
+}
+
 fn exec_opcode(z: *Z80, opcode: u8) Z80Error!void {
     switch (opcode) {
         0x00 => {}, // nop
@@ -663,6 +677,37 @@ fn exec_opcode(z: *Z80, opcode: u8) Z80Error!void {
         0xd1 => z.setDE(z.pop()), // pop de
         0xe1 => z.setHL(z.pop()), // pop hl
         0xf1 => z.setAF(z.pop()), // pop af
+
+        0xc3 => z.jump(z.nextw(), true), // jp nn
+        0xe9 => z.jump(z.getHL(), true), // jp (hl)
+
+        0xca => z.jump(z.nextw(), z.f.z), // jp z, nn
+        0xda => z.jump(z.nextw(), z.f.c), // jp c, nn
+        0xea => z.jump(z.nextw(), z.f.pv), // jp pe, nn
+        0xfa => z.jump(z.nextw(), z.f.s), // jp m, nn
+
+        0xc2 => z.jump(z.nextw(), !z.f.z), // jp nz, nn
+        0xd2 => z.jump(z.nextw(), !z.f.c), // jp nc, nn
+        0xe2 => z.jump(z.nextw(), !z.f.pv), // jp po, nn
+        0xf2 => z.jump(z.nextw(), !z.f.s), // jp p, nn
+
+        0x18 => z.jr(z.nextb(), true), // jr d
+
+        0x28 => z.jr(z.nextb(), z.f.z), // jr z, d
+        0x38 => z.jr(z.nextb(), z.f.c), // jr c, d
+
+        0x20 => z.jr(z.nextb(), !z.f.z), // jr nz, d
+        0x30 => z.jr(z.nextb(), !z.f.c), // jr nc, d
+
+        0x10 => {
+            const addr = z.nextb();
+
+            z.b -%= 1;
+
+            if (z.b != 0) {
+                z.jr(addr, true);
+            }
+        }, // djnz d
 
         else => return Z80Error.UnknownOpcode,
     }
