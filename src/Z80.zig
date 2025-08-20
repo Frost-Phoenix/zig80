@@ -138,6 +138,15 @@ fn setHL(z: *Z80, val: u16) void {
     z.l = @truncate(val & 0xff);
 }
 
+fn getAF(z: *Z80) u16 {
+    return (@as(u16, z.a) << 8) | z.f.getF();
+}
+
+fn setAF(z: *Z80, val: u16) void {
+    z.a = @truncate(val >> 8);
+    z.f.setF(@truncate(val & 0xff));
+}
+
 // ********** helper functions ********** //
 
 fn rb(z: *Z80, addr: u16) u8 {
@@ -363,6 +372,19 @@ fn cp(z: *Z80, val: u8) void {
     z.f.y = getBit(5, val) == 1;
     z.f.z = res == 0;
     z.f.s = (res >> 7) == 1;
+}
+
+fn push(z: *Z80, val: u16) void {
+    z.sp -%= 2;
+    z.ww(z.sp, val);
+}
+
+fn pop(z: *Z80) u16 {
+    const res = z.rw(z.sp);
+
+    z.sp +%= 2;
+
+    return res;
 }
 
 fn exec_opcode(z: *Z80, opcode: u8) Z80Error!void {
@@ -604,7 +626,7 @@ fn exec_opcode(z: *Z80, opcode: u8) Z80Error!void {
             z.setHL(hl);
         }, // ex de, hl
         0x08 => {
-            var af: u16 = (@as(u16, z.a) << 8) | z.f.getF();
+            var af: u16 = z.getAF();
 
             swap(&af, &z.af_);
 
@@ -631,6 +653,16 @@ fn exec_opcode(z: *Z80, opcode: u8) Z80Error!void {
 
         0xfe => z.cp(z.nextb()), // cp n
         0xbe => z.cp(z.rb(z.getHL())), // cp (hl)
+
+        0xc5 => z.push(z.getBC()), // push bc
+        0xd5 => z.push(z.getDE()), // push de
+        0xe5 => z.push(z.getHL()), // push hl
+        0xf5 => z.push(z.getAF()), // push af
+
+        0xc1 => z.setBC(z.pop()), // pop bc
+        0xd1 => z.setDE(z.pop()), // pop de
+        0xe1 => z.setHL(z.pop()), // pop hl
+        0xf1 => z.setAF(z.pop()), // pop af
 
         else => return Z80Error.UnknownOpcode,
     }
