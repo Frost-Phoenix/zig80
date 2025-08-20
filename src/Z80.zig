@@ -25,6 +25,11 @@ const Flags = packed struct(u8) {
     }
 };
 
+const RotateDir = enum {
+    left,
+    right,
+};
+
 pub const Z80Error = error{
     UnknownOpcode,
 };
@@ -361,6 +366,32 @@ fn lor(z: *Z80, val: u8) u8 {
     return res;
 }
 
+fn rotate(z: *Z80, val: u8, dir: RotateDir, loop: bool) u8 {
+    var res: u8 = switch (dir) {
+        .left => val << 1,
+        .right => val >> 1,
+    };
+
+    const old_cf: u8 = @intFromBool(z.f.c);
+    const new_cf: u8 = switch (dir) {
+        .left => val >> 7,
+        .right => val & 1,
+    };
+
+    switch (dir) {
+        .left => res |= if (loop) new_cf else old_cf,
+        .right => res |= if (loop) new_cf << 7 else old_cf << 7,
+    }
+
+    z.f.c = new_cf == 1;
+    z.f.n = false;
+    z.f.x = getBit(3, res) == 1;
+    z.f.h = false;
+    z.f.y = getBit(5, res) == 1;
+
+    return res;
+}
+
 fn cp(z: *Z80, val: u8) void {
     const res = z.a -% val;
 
@@ -635,6 +666,12 @@ fn exec_opcode(z: *Z80, opcode: u8) Z80Error!void {
 
         0xf6 => z.a = z.lor(z.nextb()), // or n
         0xb6 => z.a = z.lor(z.rb(z.getHL())), // or (hl)
+
+        0x17 => z.a = z.rotate(z.a, .left, false), // rla
+        0x07 => z.a = z.rotate(z.a, .left, true), // rlca
+
+        0x1f => z.a = z.rotate(z.a, .right, false), // rra
+        0x0f => z.a = z.rotate(z.a, .right, true), // rrca
 
         0xd9 => {
             var bc: u16 = z.getBC();
