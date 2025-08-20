@@ -414,6 +414,12 @@ fn ret(z: *Z80, condition: bool) void {
     z.pc = z.pop();
 }
 
+fn rst(z: *Z80, addr: u8) void {
+    z.push(z.pc);
+
+    z.pc = @intCast(addr);
+}
+
 fn exec_opcode(z: *Z80, opcode: u8) Z80Error!void {
     switch (opcode) {
         0x00 => {}, // nop
@@ -745,6 +751,15 @@ fn exec_opcode(z: *Z80, opcode: u8) Z80Error!void {
         0xd0 => z.ret(!z.f.c), // ret nc
         0xe0 => z.ret(!z.f.pv), // ret po
         0xf0 => z.ret(!z.f.s), // ret p
+
+        0xc7 => z.rst(0x00), // rst 00h
+        0xd7 => z.rst(0x10), // rst 10h
+        0xe7 => z.rst(0x20), // rst 20h
+        0xf7 => z.rst(0x30), // rst 30h
+        0xcf => z.rst(0x08), // rst 08h
+        0xdf => z.rst(0x18), // rst 18h
+        0xef => z.rst(0x28), // rst 28h
+        0xff => z.rst(0x38), // rst 38h
 
         else => return Z80Error.UnknownOpcode,
     }
