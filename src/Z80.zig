@@ -891,6 +891,15 @@ fn exec_opcode(z: *Z80, opcode: u8) Z80Error!void {
         0xef => z.rst(0x28), // rst 28h
         0xff => z.rst(0x38), // rst 38h
 
+        0xf3 => {
+            z.iff1 = false;
+            z.iff2 = false;
+        }, // di
+        0xfb => {
+            z.iff1 = true;
+            z.iff2 = true;
+        }, // ei
+
         else => return Z80Error.UnknownOpcode,
     }
 }
