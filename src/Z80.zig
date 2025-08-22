@@ -321,6 +321,97 @@ fn sbc(z: *Z80, a: u8, b: u8) u8 {
     return res;
 }
 
+/// DAA corrects the value of the accumulator back to BCD (Binary-Coded Decimal)
+///
+/// Depending on the NF flag, the ‘diff’ from this table must be added (NF is reset)
+/// or subtracted (NF is set) to A.
+///
+/// | CF | high_nibble | HF | low_nibble | diff |
+/// |:--:|:-----------:|:--:|:----------:|:----:|
+/// | 0  |     0-9     | 0  |    0-9     |  00  |
+/// | 0  |     0-9     | 1  |    0-9     |  06  |
+/// | 0  |     0-8     | *  |    a-f     |  06  |
+/// | 0  |     a-f     | 0  |    0-9     |  60  |
+/// | 1  |      *      | 0  |    0-9     |  60  |
+/// | 1  |      *      | 1  |    0-9     |  66  |
+/// | 1  |      *      | *  |    a-f     |  66  |
+/// | 0  |     9-f     | *  |    a-f     |  66  |
+/// | 0  |     a-f     | 1  |    0-9     |  66  |
+///
+/// The CF flag is affected as follows:
+///
+/// | CF | high_nibble | low_nibble | CF' |
+/// |:--:|:-----------:|:----------:|:---:|
+/// | 0  |     0-9     |     0-9    |  0  |
+/// | 0  |     0-8     |     a-f    |  0  |
+/// | 0  |     9-f     |     a-f    |  1  |
+/// | 0  |     a-f     |     0-9    |  1  |
+/// | 1  |      *      |      *     |  1  |
+///
+/// The HF flags is affected as follows:
+///
+/// | NF | HF | low nibble | HF' |
+/// |:--:|:--:|:----------:|:---:|
+/// | 0  | *  |    0-9     |  0  |
+/// | 0  | *  |    a-f     |  1  |
+/// | 1  | 0  |     *      |  0  |
+/// | 1  | 1  |    6-f     |  0  |
+/// | 1  | 1  |    0-5     |  1  |
+///
+/// (from: http://www.z80.info/zip/z80-documented.pdf)
+fn daa(z: *Z80) u8 {
+    var diff: u8 = 0;
+
+    const n_h: u4 = @truncate(z.a >> 4); // nibble high
+    const n_l: u4 = @truncate(z.a & 0xf); // nibble low
+
+    // diff
+    if (z.f.c == false) {
+        if ((z.f.h == true and n_h <= 0x9 and n_l <= 0x9) or (n_h <= 0x8 and n_l >= 0xa)) {
+            diff = 0x06;
+        } else if (z.f.h == false and n_h >= 0xa and n_l <= 0x9) {
+            diff = 0x60;
+        } else if ((n_h >= 0x9 and n_l >= 0xa) or (z.f.h == true and n_h >= 0xa and n_l <= 0x9)) {
+            diff = 0x66;
+        }
+    } else {
+        if (z.f.h == false and n_l <= 0x9) {
+            diff = 0x60;
+        } else {
+            diff = 0x66;
+        }
+    }
+
+    // CF
+    if (z.f.c == false) {
+        if ((n_h <= 0x9 and n_l <= 0x9) or (n_h <= 0x8 and n_l >= 0xa)) {
+            z.f.c = false;
+        } else {
+            z.f.c = true;
+        }
+    }
+
+    // NF
+    if (z.f.n == false) {
+        z.f.h = !(n_l <= 0x9);
+    } else {
+        z.f.h = z.f.h == true and n_l <= 0x5;
+    }
+
+    const res = switch (z.f.n) {
+        true => z.a -% diff,
+        false => z.a +% diff,
+    };
+
+    z.f.pv = parity(res);
+    z.f.x = getBit(3, res) == 1;
+    z.f.y = getBit(5, res) == 1;
+    z.f.z = res == 0;
+    z.f.s = (res >> 7) == 1;
+
+    return res;
+}
+
 fn land(z: *Z80, val: u8) u8 {
     const res = z.a & val;
 
@@ -633,6 +724,8 @@ fn exec_opcode(z: *Z80, opcode: u8) Z80Error!void {
 
         0xde => z.a = z.sbc(z.a, z.nextb()), // sbc a, n
         0x9e => z.a = z.sbc(z.a, z.rb(z.getHL())), // sbc a, (hl)
+
+        0x27 => z.a = z.daa(), // daa
 
         0xa7 => z.a = z.land(z.a), // and a
         0xa0 => z.a = z.land(z.b), // and b
