@@ -457,6 +457,15 @@ fn lor(z: *Z80, val: u8) u8 {
     return res;
 }
 
+fn cpl(z: *Z80) void {
+    z.a = ~z.a;
+
+    z.f.n = true;
+    z.f.x = getBit(3, z.a) == 1;
+    z.f.h = true;
+    z.f.y = getBit(5, z.a) == 1;
+}
+
 fn rotate(z: *Z80, val: u8, dir: RotateDir, loop: bool) u8 {
     var res: u8 = switch (dir) {
         .left => val << 1,
@@ -523,6 +532,14 @@ fn jr(z: *Z80, offset: u8, condition: bool) void {
     z.pc +%= @as(u16, @bitCast(@as(i16, offset_signed)));
 }
 
+fn djnz(z: *Z80, addr: u8) void {
+    z.b -%= 1;
+
+    if (z.b != 0) {
+        z.jr(addr, true);
+    }
+}
+
 fn call(z: *Z80, addr: u16, condition: bool) void {
     if (!condition) return;
 
@@ -540,6 +557,16 @@ fn rst(z: *Z80, addr: u8) void {
     z.push(z.pc);
 
     z.pc = @intCast(addr);
+}
+
+fn di(z: *Z80) void {
+    z.iff1 = false;
+    z.iff2 = false;
+}
+
+fn ei(z: *Z80) void {
+    z.iff1 = true;
+    z.iff2 = true;
 }
 
 fn exec_opcode(z: *Z80, opcode: u8) Z80Error!void {
@@ -760,14 +787,7 @@ fn exec_opcode(z: *Z80, opcode: u8) Z80Error!void {
         0xf6 => z.a = z.lor(z.nextb()), // or n
         0xb6 => z.a = z.lor(z.rb(z.getHL())), // or (hl)
 
-        0x2f => {
-            z.a = ~z.a;
-
-            z.f.n = true;
-            z.f.x = getBit(3, z.a) == 1;
-            z.f.h = true;
-            z.f.y = getBit(5, z.a) == 1;
-        }, // cpl
+        0x2f => z.cpl(), // cpl
 
         0x17 => z.a = z.rotate(z.a, .left, false), // rla
         0x07 => z.a = z.rotate(z.a, .left, true), // rlca
@@ -857,15 +877,7 @@ fn exec_opcode(z: *Z80, opcode: u8) Z80Error!void {
         0x20 => z.jr(z.nextb(), !z.f.z), // jr nz, d
         0x30 => z.jr(z.nextb(), !z.f.c), // jr nc, d
 
-        0x10 => {
-            const addr = z.nextb();
-
-            z.b -%= 1;
-
-            if (z.b != 0) {
-                z.jr(addr, true);
-            }
-        }, // djnz d
+        0x10 => z.djnz(z.nextb()), // djnz d
 
         0xcd => z.call(z.nextw(), true), // call nn
 
@@ -900,14 +912,8 @@ fn exec_opcode(z: *Z80, opcode: u8) Z80Error!void {
         0xef => z.rst(0x28), // rst 28h
         0xff => z.rst(0x38), // rst 38h
 
-        0xf3 => {
-            z.iff1 = false;
-            z.iff2 = false;
-        }, // di
-        0xfb => {
-            z.iff1 = true;
-            z.iff2 = true;
-        }, // ei
+        0xf3 => z.di(), // di
+        0xfb => z.ei(), // ei
 
         else => return Z80Error.UnknownOpcode,
     }
