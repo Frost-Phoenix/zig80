@@ -72,6 +72,24 @@ iff2: bool,
 // interrupt mode
 imode: enum { mode1, mode2, mode3 },
 
+// Simulate Q register, used in scf/ccf flags calculation
+// If the last instruction changed the flags, Q = F, else Q = 0
+q: struct {
+    val: u8,
+    changed: bool,
+
+    const Self = @This();
+
+    pub fn set(self: *Self, val: u8) void {
+        self.val = val;
+        self.changed = true;
+    }
+
+    pub fn reset(self: *Self) void {
+        self.val = 0;
+    }
+},
+
 // ********** public functions ********** //
 
 pub fn init() Z80 {
@@ -97,6 +115,8 @@ pub fn init() Z80 {
 
         .i = 0,
         .r = 0,
+
+        .q = .{ .val = 0, .changed = false },
 
         .pc = 0,
         .sp = 0xffff,
@@ -230,6 +250,8 @@ fn inc(z: *Z80, val: u8) u8 {
     z.f.z = res == 0;
     z.f.s = (res >> 7) == 1;
 
+    z.q.set(z.f.getF());
+
     return res;
 }
 
@@ -244,6 +266,8 @@ fn add(z: *Z80, a: u8, b: u8) u8 {
     z.f.y = getBit(5, res) == 1;
     z.f.z = res == 0;
     z.f.s = (res >> 7) == 1;
+
+    z.q.set(z.f.getF());
 
     return res;
 }
@@ -261,6 +285,8 @@ fn adc(z: *Z80, a: u8, b: u8) u8 {
     z.f.z = res == 0;
     z.f.s = (res >> 7) == 1;
 
+    z.q.set(z.f.getF());
+
     return res;
 }
 
@@ -272,6 +298,8 @@ fn addw(z: *Z80, a: u16, b: u16) u16 {
     z.f.x = getBit(11, res) == 1;
     z.f.h = carry(12, a, b, 0);
     z.f.y = getBit(13, res) == 1;
+
+    z.q.set(z.f.getF());
 
     return res;
 }
@@ -286,6 +314,8 @@ fn dec(z: *Z80, val: u8) u8 {
     z.f.y = getBit(5, res) == 1;
     z.f.z = res == 0;
     z.f.s = (res >> 7) == 1;
+
+    z.q.set(z.f.getF());
 
     return res;
 }
@@ -302,6 +332,8 @@ fn sub(z: *Z80, a: u8, b: u8) u8 {
     z.f.z = res == 0;
     z.f.s = (res >> 7) == 1;
 
+    z.q.set(z.f.getF());
+
     return res;
 }
 
@@ -317,6 +349,8 @@ fn sbc(z: *Z80, a: u8, b: u8) u8 {
     z.f.y = getBit(5, res) == 1;
     z.f.z = res == 0;
     z.f.s = (res >> 7) == 1;
+
+    z.q.set(z.f.getF());
 
     return res;
 }
@@ -409,6 +443,8 @@ fn daa(z: *Z80) u8 {
     z.f.z = res == 0;
     z.f.s = (res >> 7) == 1;
 
+    z.q.set(z.f.getF());
+
     return res;
 }
 
@@ -423,6 +459,8 @@ fn land(z: *Z80, val: u8) u8 {
     z.f.y = getBit(5, res) == 1;
     z.f.z = res == 0;
     z.f.s = (res >> 7) == 1;
+
+    z.q.set(z.f.getF());
 
     return res;
 }
@@ -439,6 +477,8 @@ fn lxor(z: *Z80, val: u8) u8 {
     z.f.z = res == 0;
     z.f.s = (res >> 7) == 1;
 
+    z.q.set(z.f.getF());
+
     return res;
 }
 
@@ -454,7 +494,43 @@ fn lor(z: *Z80, val: u8) u8 {
     z.f.z = res == 0;
     z.f.s = (res >> 7) == 1;
 
+    z.q.set(z.f.getF());
+
     return res;
+}
+
+fn scf(z: *Z80) void {
+    z.f.c = true;
+    z.f.n = false;
+    z.f.h = false;
+
+    if (z.q.val != 0) {
+        z.f.x = getBit(3, z.a) == 1;
+        z.f.y = getBit(5, z.a) == 1;
+    } else {
+        z.f.x = z.f.x or getBit(3, z.a) == 1;
+        z.f.y = z.f.y or getBit(5, z.a) == 1;
+    }
+
+    z.q.set(z.f.getF());
+}
+
+fn ccf(z: *Z80) void {
+    const old_cf = z.f.c;
+
+    z.f.c = !z.f.c;
+    z.f.n = false;
+    z.f.h = old_cf;
+
+    if (z.q.val != 0) {
+        z.f.x = getBit(3, z.a) == 1;
+        z.f.y = getBit(5, z.a) == 1;
+    } else {
+        z.f.x = z.f.x or getBit(3, z.a) == 1;
+        z.f.y = z.f.y or getBit(5, z.a) == 1;
+    }
+
+    z.q.set(z.f.getF());
 }
 
 fn cpl(z: *Z80) void {
@@ -464,6 +540,8 @@ fn cpl(z: *Z80) void {
     z.f.x = getBit(3, z.a) == 1;
     z.f.h = true;
     z.f.y = getBit(5, z.a) == 1;
+
+    z.q.set(z.f.getF());
 }
 
 fn rotate(z: *Z80, val: u8, dir: RotateDir, loop: bool) u8 {
@@ -489,6 +567,8 @@ fn rotate(z: *Z80, val: u8, dir: RotateDir, loop: bool) u8 {
     z.f.h = false;
     z.f.y = getBit(5, res) == 1;
 
+    z.q.set(z.f.getF());
+
     return res;
 }
 
@@ -503,6 +583,8 @@ fn cp(z: *Z80, val: u8) void {
     z.f.y = getBit(5, val) == 1;
     z.f.z = res == 0;
     z.f.s = (res >> 7) == 1;
+
+    z.q.set(z.f.getF());
 }
 
 fn push(z: *Z80, val: u16) void {
@@ -787,6 +869,9 @@ fn exec_opcode(z: *Z80, opcode: u8) Z80Error!void {
         0xf6 => z.a = z.lor(z.nextb()), // or n
         0xb6 => z.a = z.lor(z.rb(z.getHL())), // or (hl)
 
+        0x37 => z.scf(), // scf
+        0x3f => z.ccf(), // ccf
+
         0x2f => z.cpl(), // cpl
 
         0x17 => z.a = z.rotate(z.a, .left, false), // rla
@@ -916,5 +1001,11 @@ fn exec_opcode(z: *Z80, opcode: u8) Z80Error!void {
         0xfb => z.ei(), // ei
 
         else => return Z80Error.UnknownOpcode,
+    }
+
+    if (!z.q.changed) {
+        z.q.reset();
+    } else {
+        z.q.changed = false;
     }
 }

@@ -19,63 +19,38 @@ var ignore_unknown_opcodes_warnig: bool = false;
 
 const TestConfig = struct {
     name: []const u8,
-    initial: struct {
-        pc: u16,
-        sp: u16,
-        a: u8,
-        f: u8,
-        b: u8,
-        c: u8,
-        d: u8,
-        e: u8,
-        h: u8,
-        l: u8,
-        i: u8,
-        r: u8,
-        wz: u16,
-        ix: u16,
-        iy: u16,
-        af_: u16,
-        bc_: u16,
-        de_: u16,
-        hl_: u16,
-        iff1: u1,
-        iff2: u1,
-        ram: [][2]u16,
-        // ei
-        // im
-        // p
-        // q
-    },
-    final: struct {
-        pc: u16,
-        sp: u16,
-        a: u8,
-        f: u8,
-        b: u8,
-        c: u8,
-        d: u8,
-        e: u8,
-        h: u8,
-        l: u8,
-        i: u8,
-        r: u8,
-        wz: u16,
-        ix: u16,
-        iy: u16,
-        af_: u16,
-        bc_: u16,
-        de_: u16,
-        hl_: u16,
-        iff1: u1,
-        iff2: u1,
-        ram: [][2]u16,
-        // ei
-        // im
-        // p
-        // q
-    },
+    initial: CPUState,
+    final: CPUState,
     // cycles
+
+    const CPUState = struct {
+        pc: u16,
+        sp: u16,
+        a: u8,
+        f: u8,
+        b: u8,
+        c: u8,
+        d: u8,
+        e: u8,
+        h: u8,
+        l: u8,
+        i: u8,
+        r: u8,
+        // ei
+        wz: u16,
+        ix: u16,
+        iy: u16,
+        af_: u16,
+        bc_: u16,
+        de_: u16,
+        hl_: u16,
+        // im
+        // p
+        q: u8,
+        iff1: u1,
+        iff2: u1,
+        ram: [][2]u16,
+    };
 };
 
 const TestStatus = enum {
@@ -144,6 +119,8 @@ fn setZ80State(z: *Z80, config: TestConfig) void {
     z.i = init.i;
     z.r = init.r;
 
+    z.q.val = init.q;
+
     z.iff1 = init.iff1 == 1;
     z.iff2 = init.iff2 == 1;
 
@@ -180,6 +157,8 @@ fn expectState(z: *Z80, config: TestConfig) !void {
 
     try expectEqual(fin.i, z.i);
     // try expectEqual(fin.r, z.r); // Not implemented yet
+
+    try expectEqual(fin.q, z.q.val);
 
     try expectEqual(fin.iff1 == 1, z.iff1);
     try expectEqual(fin.iff2 == 1, z.iff2);
