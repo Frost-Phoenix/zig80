@@ -760,6 +760,15 @@ fn exec_opcode(z: *Z80, opcode: u8) Z80Error!void {
         0xf6 => z.a = z.lor(z.nextb()), // or n
         0xb6 => z.a = z.lor(z.rb(z.getHL())), // or (hl)
 
+        0x2f => {
+            z.a = ~z.a;
+
+            z.f.n = true;
+            z.f.x = getBit(3, z.a) == 1;
+            z.f.h = true;
+            z.f.y = getBit(5, z.a) == 1;
+        }, // cpl
+
         0x17 => z.a = z.rotate(z.a, .left, false), // rla
         0x07 => z.a = z.rotate(z.a, .left, true), // rlca
 
