@@ -1014,6 +1014,8 @@ fn exec_opcode(z: *Z80, opcode: u8) Z80Error!void {
 
 fn exec_opcode_ed(z: *Z80, opcode: u8) Z80Error!void {
     switch (opcode) {
+        0x44 => z.a = z.sub(0, z.a), // neg
+
         0x46 => z.imode = .mode0, // im 0
         0x56 => z.imode = .mode1, // im 1
         0x5e => z.imode = .mode2, // im 2
