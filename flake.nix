@@ -3,7 +3,7 @@
 
   inputs = {
     zig2nix.url = "github:Cloudef/zig2nix";
-    zls.url = "github:zigtools/zls";
+    zls.url = "github:zigtools/zls?ref=0.15.0";
 
     treefmt-nix.url = "github:numtide/treefmt-nix";
   };
@@ -95,13 +95,12 @@
         devShells.default = env.mkShell {
           # Packages required for compiling, linking and running
           # Libraries added here will be automatically added to the LD_LIBRARY_PATH and PKG_CONFIG_PATH
-          nativeBuildInputs =
-            [
-              zlsPkg
-              zigimportsPkg
-            ]
-            ++ nativeBuildInputs
-            ++ buildInputs;
+          nativeBuildInputs = [
+            zlsPkg
+            zigimportsPkg
+          ]
+          ++ nativeBuildInputs
+          ++ buildInputs;
         };
       }
     ));
