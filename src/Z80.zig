@@ -1014,6 +1014,16 @@ fn exec_opcode(z: *Z80, opcode: u8) Z80Error!void {
 
 fn exec_opcode_ed(z: *Z80, opcode: u8) Z80Error!void {
     switch (opcode) {
+        0x4b => z.setBC(z.rw(z.nextw())), // ld bc, (nn)
+        0x5b => z.setDE(z.rw(z.nextw())), // ld de, (nn)
+        0x6b => z.setHL(z.rw(z.nextw())), // ld hl, (nn)
+        0x7b => z.sp = z.rw(z.nextw()), // ld sp, (nn)
+
+        0x43 => z.ww(z.nextw(), z.getBC()), // ld (nn), bc
+        0x53 => z.ww(z.nextw(), z.getDE()), // ld (nn), de
+        0x63 => z.ww(z.nextw(), z.getHL()), // ld (nn), hl
+        0x73 => z.ww(z.nextw(), z.sp), // ld (nn), sp
+
         0x44 => z.a = z.sub(0, z.a), // neg
 
         0x46 => z.imode = .mode0, // im 0
