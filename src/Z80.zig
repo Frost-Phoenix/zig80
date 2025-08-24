@@ -70,7 +70,7 @@ iff1: bool,
 iff2: bool,
 
 // interrupt mode
-imode: enum { mode1, mode2, mode3 },
+imode: enum { mode0, mode1, mode2 },
 
 // Simulate Q register, used in scf/ccf flags calculation
 // If the last instruction changed the flags, Q = F, else Q = 0
@@ -124,7 +124,7 @@ pub fn init() Z80 {
         .iff1 = false,
         .iff2 = false,
 
-        .imode = .mode1,
+        .imode = .mode0,
     };
 }
 
@@ -1000,6 +1000,8 @@ fn exec_opcode(z: *Z80, opcode: u8) Z80Error!void {
         0xf3 => z.di(), // di
         0xfb => z.ei(), // ei
 
+        0xed => try z.exec_opcode_ed(z.nextb()), // ed prefixed opcodes
+
         else => return Z80Error.UnknownOpcode,
     }
 
@@ -1007,5 +1009,15 @@ fn exec_opcode(z: *Z80, opcode: u8) Z80Error!void {
         z.q.reset();
     } else {
         z.q.changed = false;
+    }
+}
+
+fn exec_opcode_ed(z: *Z80, opcode: u8) Z80Error!void {
+    switch (opcode) {
+        0x46 => z.imode = .mode0, // im 0
+        0x56 => z.imode = .mode1, // im 1
+        0x5e => z.imode = .mode2, // im 2
+
+        else => return Z80Error.UnknownOpcode,
     }
 }
