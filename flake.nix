@@ -3,7 +3,7 @@
 
   inputs = {
     zig2nix.url = "github:Cloudef/zig2nix";
-    zls.url = "github:zigtools/zls?ref=0.14.0";
+    zls.url = "github:zigtools/zls";
 
     treefmt-nix.url = "github:numtide/treefmt-nix";
   };
@@ -25,11 +25,10 @@
         # Check the flake.nix in zig2nix project for more options:
         # <https://github.com/Cloudef/zig2nix/blob/master/flake.nix>
         env = zig2nix.outputs.zig-env.${system} {
-          zig = zig2nix.outputs.packages.${system}.zig-0_14_1;
+          zig = zig2nix.outputs.packages.${system}.zig-latest;
         };
 
-        # zlsPkg = zls.packages.${system}.default;
-        zlsPkg = env.pkgs.zls;
+        zlsPkg = zls.packages.${system}.default;
         zigimportsPkg = env.pkgs.zigimports;
         treefmtEval = treefmt-nix.lib.evalModule env.pkgs ./treefmt.nix;
 
