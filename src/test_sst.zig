@@ -75,14 +75,15 @@ fn parseTestConfig(allocator: Allocator, path: []const u8) !json.Parsed([]TestCo
     const file = try std.fs.cwd().openFile(path, .{ .mode = .read_only });
     defer file.close();
 
-    var buffered = std.io.bufferedReader(file.reader());
-    var reader = std.json.reader(allocator, buffered.reader());
-    defer reader.deinit();
+    var buffer: [1024]u8 = undefined;
+    var file_reader = file.reader(&buffer);
+    var json_reader = std.json.Reader.init(allocator, &file_reader.interface);
+    defer json_reader.deinit();
 
     const parsed = try std.json.parseFromTokenSource(
         []TestConfig,
         allocator,
-        &reader,
+        &json_reader,
         .{
             .allocate = .alloc_always,
             .ignore_unknown_fields = true,
