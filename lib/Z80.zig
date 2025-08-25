@@ -733,6 +733,115 @@ fn in(z: *Z80, high_byte: u8, port: u8, update_flags: bool) u8 {
     return res;
 }
 
+fn ldi(z: *Z80) void {
+    const bc = z.getBC();
+    const de = z.getDE();
+    const hl = z.getHL();
+
+    const val = z.rb(hl);
+
+    z.wb(de, val);
+
+    z.setBC(bc -% 1);
+    z.setDE(de +% 1);
+    z.setHL(hl +% 1);
+
+    z.f.n = false;
+    z.f.pv = (bc -% 1) != 0;
+    z.f.x = getBit(3, z.a +% val) == 1;
+    z.f.h = false;
+    z.f.y = getBit(1, z.a +% val) == 1;
+
+    z.q.set(z.f.getF());
+}
+
+fn ldd(z: *Z80) void {
+    z.ldi();
+
+    z.setDE(z.getDE() -% 2);
+    z.setHL(z.getHL() -% 2);
+}
+
+fn ldir(z: *Z80) void {
+    z.ldi();
+
+    if (z.getBC() != 0) {
+        z.pc -%= 2;
+
+        z.f.x = getBit(11, z.pc) == 1;
+        z.f.y = getBit(13, z.pc) == 1;
+
+        z.q.set(z.f.getF());
+    }
+}
+
+fn lddr(z: *Z80) void {
+    z.ldd();
+
+    if (z.getBC() != 0) {
+        z.pc -%= 2;
+
+        z.f.x = getBit(11, z.pc) == 1;
+        z.f.y = getBit(13, z.pc) == 1;
+
+        z.q.set(z.f.getF());
+    }
+}
+
+fn cpi(z: *Z80) void {
+    const bc = z.getBC();
+    const hl = z.getHL();
+
+    const val = z.rb(hl);
+    const res = z.a -% val;
+
+    z.setBC(bc -% 1);
+    z.setHL(hl +% 1);
+
+    z.f.n = true;
+    z.f.pv = (bc -% 1) != 0;
+    z.f.h = (z.a & 0xf) < (val & 0xf);
+    z.f.z = res == 0;
+    z.f.s = (res >> 7) == 1;
+
+    z.f.x = getBit(3, res -% @intFromBool(z.f.h)) == 1;
+    z.f.y = getBit(1, res -% @intFromBool(z.f.h)) == 1;
+
+    z.q.set(z.f.getF());
+}
+
+fn cpd(z: *Z80) void {
+    z.cpi();
+
+    z.setHL(z.getHL() -% 2);
+}
+
+fn cpir(z: *Z80) void {
+    z.cpi();
+
+    if (z.getBC() != 0 and z.f.z == false) {
+        z.pc -%= 2;
+
+        z.f.x = getBit(11, z.pc) == 1;
+        z.f.y = getBit(13, z.pc) == 1;
+
+        z.q.set(z.f.getF());
+    }
+}
+
+fn cpdr(z: *Z80) void {
+    z.cpd();
+
+    if (z.getBC() != 0) {
+        z.pc -%= 2;
+
+        z.f.x = getBit(11, z.pc) == 1;
+        z.f.y = getBit(13, z.pc) == 1;
+
+        z.q.set(z.f.getF());
+    }
+}
+
 fn exec_opcode(z: *Z80, opcode: u8) Z80Error!void {
     switch (opcode) {
         0x00 => {}, // nop
@@ -1143,6 +1252,16 @@ fn exec_opcode_ed(z: *Z80, opcode: u8) Z80Error!void {
 
         0x70 => _ = z.in(z.b, z.c, true), // in (c)
         0x71 => z.out(z.b, z.c, 0), // out (c), 0
+
+        0xa0 => z.ldi(), // ldi
+        0xa8 => z.ldd(), // ldd
+        0xb0 => z.ldir(), // ldir
+        0xb8 => z.lddr(), // lddr
+
+        0xa1 => z.cpi(), // cpi
+        0xa9 => z.cpd(), // cpd
+        0xb1 => z.cpir(), // cpir
+        0xb9 => z.cpdr(), // cpdr
 
         else => return Z80Error.UnknownOpcode,
     }
