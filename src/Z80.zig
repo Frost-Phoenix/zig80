@@ -34,9 +34,20 @@ pub const Z80Error = error{
     UnknownOpcode,
 };
 
-// ********** Z80 ********** //
+const memReadFnPtr = *const fn (addr: u16) u8;
+const memWriteFnPtr = *const fn (addr: u16, val: u8) void;
+const ioReadFnPtr = *const fn (addr: u16) u8;
+const ioWriteFnPtr = *const fn (addr: u16, val: u8) void;
 
-memory: [65536]u8,
+pub const Z80Config = struct {
+    memRead: memReadFnPtr,
+    memWrite: memWriteFnPtr,
+
+    ioRead: ioReadFnPtr,
+    ioWrite: ioWriteFnPtr,
+};
+
+// ********** Z80 ********** //
 
 // main registers
 a: u8,
@@ -90,12 +101,16 @@ q: struct {
     }
 },
 
+memRead: memReadFnPtr,
+memWrite: memWriteFnPtr,
+
+ioRead: ioReadFnPtr,
+ioWrite: ioWriteFnPtr,
+
 // ********** public functions ********** //
 
-pub fn init() Z80 {
+pub fn init(config: Z80Config) Z80 {
     return .{
-        .memory = [_]u8{0} ** (1 << 16),
-
         .a = 0xff,
         .f = @bitCast(@as(u8, 0xff)),
         .b = 0,
@@ -125,6 +140,12 @@ pub fn init() Z80 {
         .iff2 = false,
 
         .imode = .mode0,
+
+        .memRead = config.memRead,
+        .memWrite = config.memWrite,
+
+        .ioRead = config.ioRead,
+        .ioWrite = config.ioWrite,
     };
 }
 
@@ -175,11 +196,11 @@ fn setAF(z: *Z80, val: u16) void {
 // ********** helper functions ********** //
 
 fn rb(z: *Z80, addr: u16) u8 {
-    return z.memory[addr];
+    return z.memRead(addr);
 }
 
 fn wb(z: *Z80, addr: u16, val: u8) void {
-    z.memory[addr] = val;
+    z.memWrite(addr, val);
 }
 
 fn rw(z: *Z80, addr: u16) u16 {

@@ -13,6 +13,8 @@ const expectEqual = std.testing.expectEqual;
 
 // ********** global var ********** //
 
+var memory: [65536]u8 = undefined;
+
 var ignore_unknown_opcodes_warnig: bool = false;
 
 // ********** types ********** //
@@ -60,6 +62,14 @@ const TestStatus = enum {
 };
 
 // ********** private functions ********** //
+
+fn memRead(addr: u16) u8 {
+    return memory[addr];
+}
+
+fn memWrite(addr: u16, val: u8) void {
+    memory[addr] = val;
+}
 
 fn sst_log(comptime status: TestStatus, test_name: []const u8) void {
     const status_txt, const logFn = switch (status) {
@@ -129,11 +139,11 @@ fn setZ80State(z: *Z80, config: TestConfig) void {
         const addr = pair[0];
         const val = pair[1];
 
-        z.memory[addr] = @truncate(val);
+        memory[addr] = @truncate(val);
     }
 }
 
-fn expectState(z: *Z80, config: TestConfig) !void {
+fn expectZ80State(z: *Z80, config: TestConfig) !void {
     const fin = config.final;
 
     try expectEqual(fin.pc, z.pc);
@@ -168,12 +178,17 @@ fn expectState(z: *Z80, config: TestConfig) !void {
         const addr = pair[0];
         const val = pair[1];
 
-        try expectEqual(@as(u8, @truncate(val)), z.memory[addr]);
+        try expectEqual(@as(u8, @truncate(val)), memory[addr]);
     }
 }
 
 fn runTest(configs: []TestConfig, test_name: []const u8) !void {
-    var z: Z80 = .init();
+    var z: Z80 = .init(.{
+        .memRead = &memRead,
+        .memWrite = &memWrite,
+        .ioRead = &memRead,
+        .ioWrite = &memWrite,
+    });
 
     for (configs) |config| {
         setZ80State(&z, config);
@@ -189,7 +204,7 @@ fn runTest(configs: []TestConfig, test_name: []const u8) !void {
             else => return err,
         };
 
-        expectState(&z, config) catch |err| {
+        expectZ80State(&z, config) catch |err| {
             sst_log(.failed, config.name);
 
             return err;
@@ -248,6 +263,8 @@ pub fn main() !void {
     const allocator = gpa.allocator();
 
     log.info("Z80 Single Step Tests", .{});
+
+    @memset(&memory, 0);
 
     const args = try std.process.argsAlloc(allocator);
     defer std.process.argsFree(allocator, args);
