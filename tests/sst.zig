@@ -13,10 +13,14 @@ const expectEqual = std.testing.expectEqual;
 
 // ********** global var ********** //
 
-var memory: [65536]u8 = undefined;
-var ports: [65536]u8 = undefined;
+var memory: [65536]u8 = @splat(0);
+var ports: [65536]u8 = @splat(0);
 
+var only_show_summary: bool = false;
 var ignore_unknown_opcodes_warnig: bool = false;
+
+var results: TestResult = .init();
+var category_results: std.EnumArray(TestCategory, TestResult) = .initFill(.init());
 
 // ********** types ********** //
 
@@ -63,6 +67,49 @@ const TestStatus = enum {
     failed,
 };
 
+const TestCategory = enum {
+    main,
+    misc,
+    bit,
+    ix,
+    iy,
+    ix_bit,
+    iy_bit,
+
+    pub fn getCategory(test_name: []const u8) TestCategory {
+        if (test_name.len == 2) return .main;
+
+        if (std.mem.startsWith(u8, test_name, "dd cb")) return .ix_bit;
+        if (std.mem.startsWith(u8, test_name, "fd cb")) return .iy_bit;
+        if (std.mem.startsWith(u8, test_name, "ed")) return .misc;
+        if (std.mem.startsWith(u8, test_name, "cb")) return .bit;
+        if (std.mem.startsWith(u8, test_name, "dd")) return .ix;
+        if (std.mem.startsWith(u8, test_name, "fd")) return .iy;
+
+        log.err("Unknown category for test: {s}", .{test_name});
+
+        unreachable;
+    }
+};
+
+const TestResult = struct {
+    passed: u32,
+    skipped: u32,
+    failed: u32,
+
+    pub fn init() TestResult {
+        return .{
+            .passed = 0,
+            .skipped = 0,
+            .failed = 0,
+        };
+    }
+
+    pub fn total(self: *const TestResult) u32 {
+        return self.passed + self.skipped + self.failed;
+    }
+};
+
 // ********** private functions ********** //
 
 fn memRead(addr: u16) u8 {
@@ -81,14 +128,47 @@ fn ioWrite(addr: u16, val: u8) void {
     ports[addr] = val;
 }
 
-fn sst_log(comptime status: TestStatus, test_name: []const u8) void {
-    const status_txt, const logFn = switch (status) {
-        .passed => .{ "\x1b[32m" ++ @tagName(status) ++ "\x1b[0m", log.info },
-        .skipped => .{ "\x1b[33m" ++ @tagName(status) ++ "\x1b[0m", log.warn },
-        .failed => .{ "\x1b[31m" ++ @tagName(status) ++ "\x1b[0m", log.err },
+fn sstLog(comptime status: TestStatus, test_name: []const u8) void {
+    if (only_show_summary) return;
+
+    const status_txt = switch (status) {
+        .passed => "\x1b[32m" ++ @tagName(status) ++ "\x1b[0m",
+        .skipped => "\x1b[33m" ++ @tagName(status) ++ "\x1b[0m",
+        .failed => "\x1b[31m" ++ @tagName(status) ++ "\x1b[0m",
     };
 
-    logFn(status_txt ++ ": \"{s}\"", .{test_name});
+    const logFn = switch (status) {
+        .passed => log.info,
+        .skipped => log.warn,
+        .failed => log.err,
+    };
+
+    logFn("{s}: \"{s}\"", .{ status_txt, test_name });
+}
+
+fn printSummary() void {
+    const bold = "\x1b[1m";
+    const green = "\x1b[32m";
+    const yellow = "\x1b[33m";
+    const red = "\x1b[31m";
+    const reset = "\x1b[0m";
+
+    const res = category_results;
+
+    log.info("", .{});
+    log.info("{s}Summary{s}", .{ bold, reset });
+    log.info("├─ Ran {d} tests", .{results.total()});
+    log.info("│  ├─ Passed\t{s}{d:>4}{s}/{d}", .{ green, results.passed, reset, results.total() });
+    log.info("│  ├─ Skipped\t{s}{d:>4}{s}/{d}", .{ yellow, results.skipped, reset, results.total() });
+    log.info("│  └─ Failed\t{s}{d:>4}{s}/{d}", .{ red, results.failed, reset, results.total() });
+    log.info("└─ Detail", .{});
+    log.info("   ├─ Main\t    {d:>3}/{d:>3}", .{ res.get(.main).passed, res.get(.main).total() });
+    log.info("   ├─ (ED) Misc\t    {d:>3}/{d:>3}", .{ res.get(.misc).passed, res.get(.misc).total() });
+    log.info("   ├─ (CB) Bit\t    {d:>3}/{d:>3}", .{ res.get(.bit).passed, res.get(.bit).total() });
+    log.info("   ├─ (DD) IX\t    {d:>3}/{d:>3}", .{ res.get(.ix).passed, res.get(.ix).total() });
+    log.info("   ├─ (FD) IY\t    {d:>3}/{d:>3}", .{ res.get(.iy).passed, res.get(.iy).total() });
+    log.info("   ├─ (DDCB) IX Bit   {d:>3}/{d:>3}", .{ res.get(.ix_bit).passed, res.get(.ix_bit).total() });
+    log.info("   └─ (FDCB) IY Bit   {d:>3}/{d:>3}", .{ res.get(.iy_bit).passed, res.get(.iy_bit).total() });
 }
 
 fn parseTestConfig(allocator: Allocator, path: []const u8) !json.Parsed([]TestConfig) {
@@ -222,13 +302,19 @@ fn runTest(configs: []TestConfig, test_name: []const u8) !void {
         .ioWrite = &ioWrite,
     });
 
+    const test_category = TestCategory.getCategory(test_name);
+    const test_results = category_results.getPtr(test_category);
+
     for (configs) |config| {
         setZ80State(&z, config);
 
         z.step() catch |err| switch (err) {
             Z80.Z80Error.UnknownOpcode => {
+                results.skipped += 1;
+                test_results.skipped += 1;
+
                 if (!ignore_unknown_opcodes_warnig) {
-                    sst_log(.skipped, test_name);
+                    sstLog(.skipped, test_name);
                 }
 
                 return;
@@ -237,13 +323,19 @@ fn runTest(configs: []TestConfig, test_name: []const u8) !void {
         };
 
         expectZ80State(&z, config) catch |err| {
-            sst_log(.failed, config.name);
+            results.failed += 1;
+            test_results.failed += 1;
+
+            sstLog(.failed, config.name);
 
             return err;
         };
     }
 
-    sst_log(.passed, test_name);
+    results.passed += 1;
+    test_results.passed += 1;
+
+    sstLog(.passed, test_name);
 }
 
 fn processFile(allocator: Allocator, file_path: []const u8) !void {
@@ -285,6 +377,8 @@ fn runAll(allocator: Allocator) !void {
 
         try processFile(allocator, file_path);
     }
+
+    printSummary();
 }
 
 // ********** public functions ********** //
@@ -294,16 +388,15 @@ pub fn main() !void {
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
-    log.info("Z80 Single Step Tests", .{});
-
-    @memset(&memory, 0);
-    @memset(&ports, 0);
+    log.info("{s}Z80 Single Step Tests{s}", .{ "\x1b[1m", "\x1b[0m" });
 
     const args = try std.process.argsAlloc(allocator);
     defer std.process.argsFree(allocator, args);
 
     if (args.len == 2 and std.mem.eql(u8, args[1], "--ignore-unknown")) {
         ignore_unknown_opcodes_warnig = true;
+    } else if (args.len == 2 and std.mem.eql(u8, args[1], "--summary-only")) {
+        only_show_summary = true;
     }
 
     if (args.len == 3 and std.mem.eql(u8, args[1], "--run")) {
