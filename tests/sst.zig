@@ -1,6 +1,6 @@
 // ********** imports ********** //
 
-const Z80 = @import("Z80.zig");
+const Z80 = @import("zig80");
 
 const std = @import("std");
 
