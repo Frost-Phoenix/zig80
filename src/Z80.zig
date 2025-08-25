@@ -672,16 +672,29 @@ fn ei(z: *Z80) void {
     z.iff2 = true;
 }
 
-fn out(z: *Z80, port: u8, val: u8) void {
-    const addr = (@as(u16, z.a) << 8) | port;
+fn out(z: *Z80, high_byte: u8, port: u8, val: u8) void {
+    const addr = (@as(u16, high_byte) << 8) | port;
 
     z.ioWrite(addr, val);
 }
 
-fn in(z: *Z80, port: u8) u8 {
-    const addr = (@as(u16, z.a) << 8) | port;
+fn in(z: *Z80, high_byte: u8, port: u8, update_flags: bool) u8 {
+    const addr = (@as(u16, high_byte) << 8) | port;
+    const res = z.ioRead(addr);
 
-    return z.ioRead(addr);
+    if (update_flags) {
+        z.f.n = false;
+        z.f.pv = parity(res);
+        z.f.x = getBit(3, res) == 1;
+        z.f.h = false;
+        z.f.y = getBit(5, res) == 1;
+        z.f.z = res == 0;
+        z.f.s = (res >> 7) == 1;
+
+        z.q.set(z.f.getF());
+    }
+
+    return res;
 }
 
 fn exec_opcode(z: *Z80, opcode: u8) Z80Error!void {
@@ -1033,8 +1046,8 @@ fn exec_opcode(z: *Z80, opcode: u8) Z80Error!void {
         0xf3 => z.di(), // di
         0xfb => z.ei(), // ei
 
-        0xd3 => z.out(z.nextb(), z.a), // out (n), a
-        0xdb => z.a = z.in(z.nextb()), // in a, (n)
+        0xd3 => z.out(z.a, z.nextb(), z.a), // out (n), a
+        0xdb => z.a = z.in(z.a, z.nextb(), false), // in a, (n)
 
         0xed => try z.exec_opcode_ed(z.nextb()), // ed prefixed opcodes
 
@@ -1065,6 +1078,25 @@ fn exec_opcode_ed(z: *Z80, opcode: u8) Z80Error!void {
         0x46 => z.imode = .mode0, // im 0
         0x56 => z.imode = .mode1, // im 1
         0x5e => z.imode = .mode2, // im 2
+
+        0x78 => z.a = z.in(z.b, z.c, true), // in a, (c)
+        0x40 => z.b = z.in(z.b, z.c, true), // in b, (c)
+        0x48 => z.c = z.in(z.b, z.c, true), // in c, (c)
+        0x50 => z.d = z.in(z.b, z.c, true), // in d, (c)
+        0x58 => z.e = z.in(z.b, z.c, true), // in e, (c)
+        0x60 => z.h = z.in(z.b, z.c, true), // in h, (c)
+        0x68 => z.l = z.in(z.b, z.c, true), // in l, (c)
+
+        0x79 => z.out(z.b, z.c, z.a), // out (c), a
+        0x41 => z.out(z.b, z.c, z.b), // out (c), b
+        0x49 => z.out(z.b, z.c, z.c), // out (c), c
+        0x51 => z.out(z.b, z.c, z.d), // out (c), d
+        0x59 => z.out(z.b, z.c, z.e), // out (c), e
+        0x61 => z.out(z.b, z.c, z.h), // out (c), h
+        0x69 => z.out(z.b, z.c, z.l), // out (c), l
+
+        0x70 => _ = z.in(z.b, z.c, true), // in (c)
+        0x71 => z.out(z.b, z.c, 0), // out (c), 0
 
         else => return Z80Error.UnknownOpcode,
     }
