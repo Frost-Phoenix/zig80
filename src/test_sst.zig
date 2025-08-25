@@ -14,6 +14,7 @@ const expectEqual = std.testing.expectEqual;
 // ********** global var ********** //
 
 var memory: [65536]u8 = undefined;
+var ports: [65536]u8 = undefined;
 
 var ignore_unknown_opcodes_warnig: bool = false;
 
@@ -24,6 +25,7 @@ const TestConfig = struct {
     initial: CPUState,
     final: CPUState,
     // cycles
+    ports: ?[][3]json.Value = null,
 
     const CPUState = struct {
         pc: u16,
@@ -69,6 +71,14 @@ fn memRead(addr: u16) u8 {
 
 fn memWrite(addr: u16, val: u8) void {
     memory[addr] = val;
+}
+
+fn ioRead(addr: u16) u8 {
+    return ports[addr];
+}
+
+fn ioWrite(addr: u16, val: u8) void {
+    ports[addr] = val;
 }
 
 fn sst_log(comptime status: TestStatus, test_name: []const u8) void {
@@ -141,6 +151,17 @@ fn setZ80State(z: *Z80, config: TestConfig) void {
 
         memory[addr] = @truncate(val);
     }
+
+    if (config.ports) |_ports| {
+        for (_ports) |port| {
+            if (port[2].string[0] != 'r') continue;
+
+            const addr: u16 = @intCast(port[0].integer);
+            const val: u8 = @intCast(port[1].integer);
+
+            ports[addr] = val;
+        }
+    }
 }
 
 fn expectZ80State(z: *Z80, config: TestConfig) !void {
@@ -180,14 +201,25 @@ fn expectZ80State(z: *Z80, config: TestConfig) !void {
 
         try expectEqual(@as(u8, @truncate(val)), memory[addr]);
     }
+
+    if (config.ports) |_ports| {
+        for (_ports) |port| {
+            if (port[2].string[0] != 'w') continue;
+
+            const addr: u16 = @intCast(port[0].integer);
+            const val: u8 = @intCast(port[1].integer);
+
+            try expectEqual(val, ports[addr]);
+        }
+    }
 }
 
 fn runTest(configs: []TestConfig, test_name: []const u8) !void {
     var z: Z80 = .init(.{
         .memRead = &memRead,
         .memWrite = &memWrite,
-        .ioRead = &memRead,
-        .ioWrite = &memWrite,
+        .ioRead = &ioRead,
+        .ioWrite = &ioWrite,
     });
 
     for (configs) |config| {
@@ -265,6 +297,7 @@ pub fn main() !void {
     log.info("Z80 Single Step Tests", .{});
 
     @memset(&memory, 0);
+    @memset(&ports, 0);
 
     const args = try std.process.argsAlloc(allocator);
     defer std.process.argsFree(allocator, args);

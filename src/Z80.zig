@@ -672,6 +672,18 @@ fn ei(z: *Z80) void {
     z.iff2 = true;
 }
 
+fn out(z: *Z80, port: u8, val: u8) void {
+    const addr = (@as(u16, z.a) << 8) | port;
+
+    z.ioWrite(addr, val);
+}
+
+fn in(z: *Z80, port: u8) u8 {
+    const addr = (@as(u16, z.a) << 8) | port;
+
+    return z.ioRead(addr);
+}
+
 fn exec_opcode(z: *Z80, opcode: u8) Z80Error!void {
     switch (opcode) {
         0x00 => {}, // nop
@@ -1020,6 +1032,9 @@ fn exec_opcode(z: *Z80, opcode: u8) Z80Error!void {
 
         0xf3 => z.di(), // di
         0xfb => z.ei(), // ei
+
+        0xd3 => z.out(z.nextb(), z.a), // out (n), a
+        0xdb => z.a = z.in(z.nextb()), // in a, (n)
 
         0xed => try z.exec_opcode_ed(z.nextb()), // ed prefixed opcodes
 
