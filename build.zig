@@ -34,4 +34,21 @@ pub fn build(b: *std.Build) void {
     if (b.args) |args| {
         run_cmd_sst.addArgs(args);
     }
+
+    // "check" step used by ZLS for Build-On-Save.
+    const exe_check = b.addExecutable(.{
+        .name = "check",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tests/sst.zig"),
+
+            .target = target,
+            .optimize = optimize,
+
+            .imports = &.{
+                .{ .name = "zig80", .module = mod_zig80 },
+            },
+        }),
+    });
+    const check = b.step("check", "Check if zig80 compiles");
+    check.dependOn(&exe_check.step);
 }
