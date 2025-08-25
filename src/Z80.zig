@@ -325,6 +325,24 @@ fn addw(z: *Z80, a: u16, b: u16) u16 {
     return res;
 }
 
+fn adcw(z: *Z80, a: u16, b: u16) u16 {
+    const carry_in = @intFromBool(z.f.c);
+    const res = a +% b +% carry_in;
+
+    z.f.c = carry(16, a, b, carry_in);
+    z.f.n = false;
+    z.f.pv = (a & 0x8000 == b & 0x8000) and (a & 0x8000 != res & 0x8000);
+    z.f.x = getBit(11, res) == 1;
+    z.f.h = carry(12, a, b, carry_in);
+    z.f.y = getBit(13, res) == 1;
+    z.f.z = res == 0;
+    z.f.s = (res >> 15) == 1;
+
+    z.q.set(z.f.getF());
+
+    return res;
+}
+
 fn dec(z: *Z80, val: u8) u8 {
     const res = val -% 1;
 
@@ -370,6 +388,24 @@ fn sbc(z: *Z80, a: u8, b: u8) u8 {
     z.f.y = getBit(5, res) == 1;
     z.f.z = res == 0;
     z.f.s = (res >> 7) == 1;
+
+    z.q.set(z.f.getF());
+
+    return res;
+}
+
+fn sbcw(z: *Z80, a: u16, b: u16) u16 {
+    const carry_in = @intFromBool(z.f.c);
+    const res = a -% b -% carry_in;
+
+    z.f.c = @as(u17, a) < @as(u17, b) + carry_in;
+    z.f.n = true;
+    z.f.pv = (a & 0x8000 != b & 0x8000) and (a & 0x8000 != res & 0x8000);
+    z.f.x = getBit(11, res) == 1;
+    z.f.h = @as(u17, a & 0xfff) < @as(u17, b & 0xfff) + carry_in;
+    z.f.y = getBit(13, res) == 1;
+    z.f.z = res == 0;
+    z.f.s = (res >> 15) == 1;
 
     z.q.set(z.f.getF());
 
@@ -1072,6 +1108,16 @@ fn exec_opcode_ed(z: *Z80, opcode: u8) Z80Error!void {
         0x53 => z.ww(z.nextw(), z.getDE()), // ld (nn), de
         0x63 => z.ww(z.nextw(), z.getHL()), // ld (nn), hl
         0x73 => z.ww(z.nextw(), z.sp), // ld (nn), sp
+
+        0x4a => z.setHL(z.adcw(z.getHL(), z.getBC())), // adc hl, bc
+        0x5a => z.setHL(z.adcw(z.getHL(), z.getDE())), // adc hl, de
+        0x6a => z.setHL(z.adcw(z.getHL(), z.getHL())), // adc hl, hl
+        0x7a => z.setHL(z.adcw(z.getHL(), z.sp)), // adc hl, sp
+
+        0x42 => z.setHL(z.sbcw(z.getHL(), z.getBC())), // sbc hl, bc
+        0x52 => z.setHL(z.sbcw(z.getHL(), z.getDE())), // sbc hl, de
+        0x62 => z.setHL(z.sbcw(z.getHL(), z.getHL())), // sbc hl, hl
+        0x72 => z.setHL(z.sbcw(z.getHL(), z.sp)), // sbc hl, sp
 
         0x44 => z.a = z.sub(0, z.a), // neg
 
