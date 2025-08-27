@@ -842,6 +842,207 @@ fn cpdr(z: *Z80) void {
     }
 }
 
+fn ini(z: *Z80) void {
+    const hl = z.getHL();
+
+    const val = z.in(z.b, z.c, false);
+
+    z.wb(hl, val);
+
+    z.b = z.dec(z.b);
+    z.setHL(hl +% 1);
+
+    const val_16 = @as(u16, val);
+    const carry_test = (val_16 + ((z.c +% 1) & 255)) > 255;
+
+    z.f.c = carry_test;
+    z.f.n = (val >> 7) == 1;
+    z.f.pv = parity(((val +% ((z.c +% 1) & 255)) & 7) ^ z.b);
+    z.f.h = carry_test;
+
+    z.q.set(z.f.getF());
+}
+
+fn ind(z: *Z80) void {
+    const hl = z.getHL();
+
+    const val = z.in(z.b, z.c, false);
+
+    z.wb(hl, val);
+
+    z.b = z.dec(z.b);
+    z.setHL(hl -% 1);
+
+    const val_16 = @as(u16, val);
+    const carry_test = (val_16 +% ((z.c -% 1) & 255)) > 255;
+
+    z.f.c = carry_test;
+    z.f.n = (val >> 7) == 1;
+    z.f.pv = parity(((val +% ((z.c -% 1) & 255)) & 7) ^ z.b);
+    z.f.h = carry_test;
+
+    z.q.set(z.f.getF());
+}
+
+fn inir(z: *Z80) void {
+    z.ini();
+
+    if (z.b != 0) {
+        z.pc -%= 2;
+
+        z.f.x = getBit(11, z.pc) == 1;
+        z.f.y = getBit(13, z.pc) == 1;
+        if (z.f.c) {
+            if (z.in(z.b +% 1, z.c, false) & 0x80 == 0x80) {
+                z.f.pv = (@intFromBool(z.f.pv) ^ (@intFromBool(parity((z.b -% 1) & 0x7)) ^ 1)) == 1;
+                z.f.h = (z.b & 0x0F) == 0x00;
+            } else {
+                z.f.pv = (@intFromBool(z.f.pv) ^ (@intFromBool(parity((z.b +% 1) & 0x7)) ^ 1)) == 1;
+                z.f.h = (z.b & 0x0F) == 0x0F;
+            }
+        } else {
+            z.f.pv = (@intFromBool(z.f.pv) ^ (@intFromBool(parity(z.b & 0x7)) ^ 1)) == 1;
+        }
+    } else {
+        z.f.x = false;
+        z.f.y = false;
+        z.f.z = true;
+        z.f.s = false;
+    }
+
+    z.q.set(z.f.getF());
+}
+
+fn indr(z: *Z80) void {
+    z.ind();
+
+    if (z.b != 0) {
+        z.pc -%= 2;
+
+        z.f.x = getBit(11, z.pc) == 1;
+        z.f.y = getBit(13, z.pc) == 1;
+        if (z.f.c) {
+            if (z.in(z.b +% 1, z.c, false) & 0x80 == 0x80) {
+                z.f.pv = (@intFromBool(z.f.pv) ^ (@intFromBool(parity((z.b -% 1) & 0x7)) ^ 1)) == 1;
+                z.f.h = (z.b & 0x0F) == 0x00;
+            } else {
+                z.f.pv = (@intFromBool(z.f.pv) ^ (@intFromBool(parity((z.b +% 1) & 0x7)) ^ 1)) == 1;
+                z.f.h = (z.b & 0x0F) == 0x0F;
+            }
+        } else {
+            z.f.pv = (@intFromBool(z.f.pv) ^ (@intFromBool(parity(z.b & 0x7)) ^ 1)) == 1;
+        }
+    } else {
+        z.f.x = false;
+        z.f.y = false;
+        z.f.z = true;
+        z.f.s = false;
+    }
+
+    z.q.set(z.f.getF());
+}
+
+fn outi(z: *Z80) void {
+    const hl = z.getHL();
+
+    z.b = z.dec(z.b);
+
+    const val = z.rb(hl);
+
+    z.out(z.b, z.c, val);
+
+    z.setHL(hl +% 1);
+    const val_16 = @as(u16, val);
+    const carry_test = (val_16 +% z.l) > 255;
+
+    z.f.c = carry_test;
+    z.f.n = (val >> 7) == 1;
+    z.f.pv = parity(@truncate(((val +% z.l) & 7) ^ z.b));
+    z.f.h = carry_test;
+
+    z.q.set(z.f.getF());
+}
+
+fn outd(z: *Z80) void {
+    const hl = z.getHL();
+
+    z.b = z.dec(z.b);
+
+    const val = z.rb(hl);
+
+    z.out(z.b, z.c, val);
+
+    z.setHL(hl -% 1);
+
+    const val_16 = @as(u16, val);
+    const carry_test = (val_16 +% z.l) > 255;
+
+    z.f.c = carry_test;
+    z.f.n = (val >> 7) == 1;
+    z.f.pv = parity(@truncate(((val +% z.l) & 7) ^ z.b));
+    z.f.h = carry_test;
+
+    z.q.set(z.f.getF());
+}
+
+fn otir(z: *Z80) void {
+    z.outi();
+
+    if (z.b != 0) {
+        z.pc -%= 2;
+
+        z.f.x = getBit(11, z.pc) == 1;
+        z.f.y = getBit(13, z.pc) == 1;
+        if (z.f.c) {
+            if (z.rb(z.getHL() -% 1) & 0x80 == 0x80) {
+                z.f.pv = (@intFromBool(z.f.pv) ^ (@intFromBool(parity((z.b -% 1) & 0x7)) ^ 1)) == 1;
+                z.f.h = (z.b & 0x0F) == 0x00;
+            } else {
+                z.f.pv = (@intFromBool(z.f.pv) ^ (@intFromBool(parity((z.b +% 1) & 0x7)) ^ 1)) == 1;
+                z.f.h = (z.b & 0x0F) == 0x0F;
+            }
+        } else {
+            z.f.pv = (@intFromBool(z.f.pv) ^ (@intFromBool(parity(z.b & 0x7)) ^ 1)) == 1;
+        }
+    } else {
+        z.f.x = false;
+        z.f.y = false;
+        z.f.z = true;
+        z.f.s = false;
+    }
+
+    z.q.set(z.f.getF());
+}
+
+fn otdr(z: *Z80) void {
+    z.outd();
+
+    if (z.b != 0) {
+        z.pc -%= 2;
+
+        z.f.x = getBit(11, z.pc) == 1;
+        z.f.y = getBit(13, z.pc) == 1;
+        if (z.f.c) {
+            if (z.rb(z.getHL() +% 1) & 0x80 == 0x80) {
+                z.f.pv = (@intFromBool(z.f.pv) ^ (@intFromBool(parity((z.b -% 1) & 0x7)) ^ 1)) == 1;
+                z.f.h = (z.b & 0x0F) == 0x00;
+            } else {
+                z.f.pv = (@intFromBool(z.f.pv) ^ (@intFromBool(parity((z.b +% 1) & 0x7)) ^ 1)) == 1;
+                z.f.h = (z.b & 0x0F) == 0x0F;
+            }
+        } else {
+            z.f.pv = (@intFromBool(z.f.pv) ^ (@intFromBool(parity(z.b & 0x7)) ^ 1)) == 1;
+        }
+    } else {
+        z.f.x = false;
+        z.f.y = false;
+        z.f.z = true;
+        z.f.s = false;
+    }
+
+    z.q.set(z.f.getF());
+}
+
 fn exec_opcode(z: *Z80, opcode: u8) Z80Error!void {
     switch (opcode) {
         0x00 => {}, // nop
@@ -1262,6 +1463,16 @@ fn exec_opcode_ed(z: *Z80, opcode: u8) Z80Error!void {
         0xa9 => z.cpd(), // cpd
         0xb1 => z.cpir(), // cpir
         0xb9 => z.cpdr(), // cpdr
+
+        0xa2 => z.ini(), // ini
+        0xaa => z.ind(), // ind
+        0xb2 => z.inir(), // inir
+        0xba => z.indr(), // indr
+
+        0xa3 => z.outi(), // outi
+        0xab => z.outd(), // outd
+        0xb3 => z.otir(), // otir
+        0xbb => z.otdr(), // otdr
 
         else => return Z80Error.UnknownOpcode,
     }
