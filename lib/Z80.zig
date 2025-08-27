@@ -30,6 +30,11 @@ const RotateDir = enum {
     right,
 };
 
+const ShiftDir = enum {
+    left,
+    right,
+};
+
 pub const Z80Error = error{
     UnknownOpcode,
 };
@@ -230,6 +235,14 @@ fn nextw(z: *Z80) u16 {
 
 fn getBit(n: u5, val: u32) u1 {
     return @truncate((val >> n) & 1);
+}
+
+fn setBit(bit: u3, val: u8) u8 {
+    return val | (@as(u8, 1) << bit);
+}
+
+fn resetBit(bit: u3, val: u8) u8 {
+    return val & ~(@as(u8, 1) << bit);
 }
 
 fn carry(bit: u5, a: u16, b: u16, cf: u1) bool {
@@ -620,13 +633,72 @@ fn rotate(z: *Z80, val: u8, dir: RotateDir, loop: bool) u8 {
 
     z.f.c = new_cf == 1;
     z.f.n = false;
+    z.f.pv = parity(res);
     z.f.x = getBit(3, res) == 1;
     z.f.h = false;
     z.f.y = getBit(5, res) == 1;
+    z.f.z = res == 0;
+    z.f.s = (res >> 7) == 1;
 
     z.q.set(z.f.getF());
 
     return res;
+}
+
+fn rotateA(z: *Z80, dir: RotateDir, loop: bool) u8 {
+    const old_f = z.f;
+
+    const res = z.rotate(z.a, dir, loop);
+
+    z.f.pv = old_f.pv;
+    z.f.z = old_f.z;
+    z.f.s = old_f.s;
+
+    z.q.set(z.f.getF());
+
+    return res;
+}
+
+fn shift(z: *Z80, val: u8, dir: ShiftDir, fill: bool) u8 {
+    var res: u8 = switch (dir) {
+        .left => val << 1,
+        .right => val >> 1,
+    };
+
+    switch (dir) {
+        .left => res |= if (fill) 1 else 0,
+        .right => res |= if (fill) val & 0x80 else 0 << 7,
+    }
+
+    const new_cf: u8 = switch (dir) {
+        .left => val >> 7,
+        .right => val & 1,
+    };
+
+    z.f.c = new_cf == 1;
+    z.f.n = false;
+    z.f.pv = parity(res);
+    z.f.x = getBit(3, res) == 1;
+    z.f.h = false;
+    z.f.y = getBit(5, res) == 1;
+    z.f.z = res == 0;
+    z.f.s = (res >> 7) == 1;
+
+    z.q.set(z.f.getF());
+
+    return res;
+}
+
+fn bit_test(z: *Z80, bit: u3, val: u8) void {
+    z.f.n = false;
+    z.f.pv = getBit(bit, val) == 0;
+    z.f.x = getBit(3, val) == 1;
+    z.f.h = true;
+    z.f.y = getBit(5, val) == 1;
+    z.f.z = getBit(bit, val) == 0;
+    z.f.s = bit == 7 and getBit(7, val) == 1;
+
+    z.q.set(z.f.getF());
 }
 
 fn cp(z: *Z80, val: u8) void {
@@ -1266,11 +1338,11 @@ fn exec_opcode(z: *Z80, opcode: u8) Z80Error!void {
 
         0x2f => z.cpl(), // cpl
 
-        0x17 => z.a = z.rotate(z.a, .left, false), // rla
-        0x07 => z.a = z.rotate(z.a, .left, true), // rlca
+        0x17 => z.a = z.rotateA(.left, false), // rla
+        0x07 => z.a = z.rotateA(.left, true), // rlca
 
-        0x1f => z.a = z.rotate(z.a, .right, false), // rra
-        0x0f => z.a = z.rotate(z.a, .right, true), // rrca
+        0x1f => z.a = z.rotateA(.right, false), // rra
+        0x0f => z.a = z.rotateA(.right, true), // rrca
 
         0xd9 => {
             var bc: u16 = z.getBC();
@@ -1396,6 +1468,7 @@ fn exec_opcode(z: *Z80, opcode: u8) Z80Error!void {
         0xdb => z.a = z.in(z.a, z.nextb(), false), // in a, (n)
 
         0xed => try z.exec_opcode_ed(z.nextb()), // ed prefixed opcodes
+        0xcb => try z.exec_opcode_cb(z.nextb()), // cb prefixed opcodes
 
         else => return Z80Error.UnknownOpcode,
     }
@@ -1475,5 +1548,51 @@ fn exec_opcode_ed(z: *Z80, opcode: u8) Z80Error!void {
         0xbb => z.otdr(), // otdr
 
         else => return Z80Error.UnknownOpcode,
+    }
+}
+
+fn exec_opcode_cb(z: *Z80, opcode: u8) Z80Error!void {
+    const registers: [8]?*u8 = .{ &z.b, &z.c, &z.d, &z.e, &z.h, &z.l, null, &z.a };
+
+    const _x: u2 = @truncate(opcode >> 6);
+    const _y: u3 = @truncate((opcode >> 3) & 0b111);
+    const _z: u3 = @truncate(opcode & 0b111);
+
+    if (registers[_z]) |r| {
+        switch (_x) {
+            0 => r.* = switch (_y) {
+                0 => z.rotate(r.*, .left, true),
+                1 => z.rotate(r.*, .right, true),
+                2 => z.rotate(r.*, .left, false),
+                3 => z.rotate(r.*, .right, false),
+                4 => z.shift(r.*, .left, false),
+                5 => z.shift(r.*, .right, true),
+                6 => z.shift(r.*, .left, true),
+                7 => z.shift(r.*, .right, false),
+            },
+            1 => z.bit_test(_y, r.*),
+            2 => r.* = resetBit(_y, r.*),
+            3 => r.* = setBit(_y, r.*),
+        }
+    } else {
+        const hl = z.getHL();
+        const val = z.rb(hl);
+
+        switch (_x) {
+            0 => z.wb(hl, switch (_y) {
+                0 => z.rotate(val, .left, true),
+                1 => z.rotate(val, .right, true),
+                2 => z.rotate(val, .left, false),
+                3 => z.rotate(val, .right, false),
+                4 => z.shift(val, .left, false),
+                5 => z.shift(val, .right, true),
+                6 => z.shift(val, .left, true),
+                7 => z.shift(val, .right, false),
+            }),
+            // 1 => z.bit_test(_y, val),
+            2 => z.wb(hl, resetBit(_y, val)),
+            3 => z.wb(hl, setBit(_y, val)),
+            else => return Z80Error.UnknownOpcode,
+        }
     }
 }
