@@ -1820,12 +1820,184 @@ fn exec_opcode_cb(z: *Z80, opcode: u8) Z80Error!void {
     }
 }
 
-fn exec_opcode_xy(z: *Z80, opcode: u8, xy: *u16) Z80Error!void {
+fn exec_opcode_xy(z: *Z80, opcode: u8, xy_ptr: *u16) Z80Error!void {
     z.inc_r();
 
-    _ = xy;
+    var xy: struct {
+        ptr: *u16,
+
+        const Self = @This();
+
+        fn getDisplacement(z_: *Z80) u16 {
+            return @bitCast(@as(i16, @as(i8, @bitCast(z_.nextb()))));
+        }
+
+        pub fn getLow(self: *Self) u8 {
+            return @truncate(self.ptr.* & 0xff);
+        }
+
+        pub fn getHigh(self: *Self) u8 {
+            return @truncate(self.ptr.* >> 8);
+        }
+
+        pub fn setLow(self: *Self, val: u8) void {
+            self.ptr.* = (self.ptr.* & 0xff00) | val;
+        }
+
+        pub fn setHigh(self: *Self, val: u8) void {
+            self.ptr.* = (@as(u16, val) << 8) | (self.ptr.* & 0xff);
+        }
+
+        pub fn getAddr(self: *Self, z_: *Z80) u16 {
+            const res = self.ptr.* +% getDisplacement(z_);
+
+            z_.wz = res;
+
+            return res;
+        }
+    } = .{ .ptr = xy_ptr };
 
     switch (opcode) {
+        0x7c => z.a = xy.getHigh(), // ld a, ixh / ld a, iyh
+        0x44 => z.b = xy.getHigh(), // ld b, ixh / ld b, iyh
+        0x4c => z.c = xy.getHigh(), // ld c, ixh / ld c, iyh
+        0x54 => z.d = xy.getHigh(), // ld d, ixh / ld d, iyh
+        0x5c => z.e = xy.getHigh(), // ld e, ixh / ld e, iyh
+
+        0x7d => z.a = xy.getLow(), // ld a, ixl / ld a, iyl
+        0x45 => z.b = xy.getLow(), // ld b, ixl / ld b, iyl
+        0x4d => z.c = xy.getLow(), // ld c, ixl / ld c, iyl
+        0x55 => z.d = xy.getLow(), // ld d, ixl / ld d, iyl
+        0x5d => z.e = xy.getLow(), // ld e, ixl / ld e, iyl
+
+        0x67 => xy.setHigh(z.a), // ld ixh, a / ld iyh, a
+        0x60 => xy.setHigh(z.b), // ld ixh, b / ld iyh, b
+        0x61 => xy.setHigh(z.c), // ld ixh, c / ld iyh, c
+        0x62 => xy.setHigh(z.d), // ld ixh, d / ld iyh, d
+        0x63 => xy.setHigh(z.e), // ld ixh, e / ld iyh, e
+        0x64 => xy.setHigh(xy.getHigh()), // ld ixh, ixh / ld iyh, iyh
+        0x65 => xy.setHigh(xy.getLow()), // ld ixh, ixl / ld iyh, iyl
+        0x26 => xy.setHigh(z.nextb()), // ld ixh, n / ld iyh, n
+
+        0x6f => xy.setLow(z.a), // ld ixl, a / ld iyl, a
+        0x68 => xy.setLow(z.b), // ld ixl, b / ld iyl, b
+        0x69 => xy.setLow(z.c), // ld ixl, c / ld iyl, c
+        0x6a => xy.setLow(z.d), // ld ixl, d / ld iyl, d
+        0x6b => xy.setLow(z.e), // ld ixl, e / ld iyl, e
+        0x6c => xy.setLow(xy.getHigh()), // ld ixl, ixh / ld iyl, iyh
+        0x6d => xy.setLow(xy.getLow()), // ld ixl, ixl / ld iyl, iyl
+        0x2e => xy.setLow(z.nextb()), // ld ixl, n / ld iyl, n
+
+        0x77 => z.wb(xy.getAddr(z), z.a), // ld (ix+d), a / ld (iy+d), a
+        0x70 => z.wb(xy.getAddr(z), z.b), // ld (ix+d), b / ld (iy+d), b
+        0x71 => z.wb(xy.getAddr(z), z.c), // ld (ix+d), c / ld (iy+d), c
+        0x72 => z.wb(xy.getAddr(z), z.d), // ld (ix+d), d / ld (iy+d), d
+        0x73 => z.wb(xy.getAddr(z), z.e), // ld (ix+d), e / ld (iy+d), e
+        0x74 => z.wb(xy.getAddr(z), z.h), // ld (ix+d), h / ld (iy+d), h
+        0x75 => z.wb(xy.getAddr(z), z.l), // ld (ix+d), l / ld (iy+d), l
+        0x36 => z.wb(xy.getAddr(z), z.nextb()), // ld (ix+d), n / ld (iy+d), n
+
+        0x7e => z.a = z.rb(xy.getAddr(z)), // ld a, (ix+d) / ld a, (iy+d)
+        0x46 => z.b = z.rb(xy.getAddr(z)), // ld b, (ix+d) / ld b, (iy+d)
+        0x4e => z.c = z.rb(xy.getAddr(z)), // ld c, (ix+d) / ld c, (iy+d)
+        0x56 => z.d = z.rb(xy.getAddr(z)), // ld d, (ix+d) / ld d, (iy+d)
+        0x5e => z.e = z.rb(xy.getAddr(z)), // ld e, (ix+d) / ld e, (iy+d)
+        0x66 => z.h = z.rb(xy.getAddr(z)), // ld h, (ix+d) / ld h, (iy+d)
+        0x6e => z.l = z.rb(xy.getAddr(z)), // ld l, (ix+d) / ld l, (iy+d)
+
+        0x21 => xy.ptr.* = z.nextw(), // ld ix, nn / ld iy, nn
+        0x2a => {
+            const addr = z.nextw();
+
+            xy.ptr.* = z.rw(addr);
+            z.wz = addr +% 1;
+        }, // ld ix, (nn) / ld iy, (nn)
+        0x22 => {
+            const addr = z.nextw();
+
+            z.ww(addr, xy.ptr.*);
+            z.wz = addr +% 1;
+        }, // ld (nn), ix / ld (nn), iy
+
+        0xf9 => z.sp = xy.ptr.*, // ld sp, ix / ld sp, iy
+
+        0x24 => xy.setHigh(z.inc(xy.getHigh())), // inc ixh / inc iyh
+        0x2c => xy.setLow(z.inc(xy.getLow())), // inc ixl / inc iyl
+        0x23 => xy.ptr.* +%= 1, // inc ix / inc iy
+
+        0x34 => {
+            const addr = xy.getAddr(z);
+
+            z.wb(addr, z.inc(z.rb(addr)));
+        }, // inc (ix+d) / inc (iy+d)
+
+        0x84 => z.a = z.add(z.a, xy.getHigh()), // add a, ixh / add a, iyh
+        0x85 => z.a = z.add(z.a, xy.getLow()), // add a, ixl / add a, iyl
+        0x86 => z.a = z.add(z.a, z.rb(xy.getAddr(z))), // add a, (ix+d) / add a, (iy+d)
+
+        0x09 => xy.ptr.* = z.addw(xy.ptr.*, z.getBC()), // add ix, bc / add iy, bc
+        0x19 => xy.ptr.* = z.addw(xy.ptr.*, z.getDE()), // add ix, de / add iy, de
+        0x29 => xy.ptr.* = z.addw(xy.ptr.*, xy.ptr.*), // add ix, ix / add iy, iy
+        0x39 => xy.ptr.* = z.addw(xy.ptr.*, z.sp), // add ix, sp / add iy, sp
+
+        0x8c => z.a = z.adc(z.a, xy.getHigh()), // adc a, ixh / adc a, iyh
+        0x8d => z.a = z.adc(z.a, xy.getLow()), // adc a, ixl / adc a, iyl
+        0x8e => z.a = z.adc(z.a, z.rb(xy.getAddr(z))), // adc a, (ix+d) / adc a, (iy+d)
+
+        0x25 => xy.setHigh(z.dec(xy.getHigh())), // dec ixh / dec iyh
+        0x2d => xy.setLow(z.dec(xy.getLow())), // dec ixl / dec iyl
+        0x2b => xy.ptr.* -%= 1, // dec ix / dec iy
+
+        0x35 => {
+            const addr = xy.getAddr(z);
+
+            z.wb(addr, z.dec(z.rb(addr)));
+        }, // dec (ix+d) / dec (iy+d)
+
+        0x94 => z.a = z.sub(z.a, xy.getHigh()), // sub a, ixh / sub a, iyh
+        0x95 => z.a = z.sub(z.a, xy.getLow()), // sub a, ixl / sub a, iyl
+        0x96 => z.a = z.sub(z.a, z.rb(xy.getAddr(z))), // sub a, (ix+d) / sub a, (iy+d)
+
+        0x9c => z.a = z.sbc(z.a, xy.getHigh()), // sbc a, ixh / sbc a, iyh
+        0x9d => z.a = z.sbc(z.a, xy.getLow()), // sbc a, ixl / sbc a, iyl
+        0x9e => z.a = z.sbc(z.a, z.rb(xy.getAddr(z))), // sbc a, (ix+d) / sbc a, (iy+d)
+
+        0xa4 => z.a = z.land(xy.getHigh()), // and ixh / and iyh
+        0xa5 => z.a = z.land(xy.getLow()), // and ixl / and iyl
+        0xa6 => z.a = z.land(z.rb(xy.getAddr(z))), // and (ix+d) / and (iy+d)
+
+        0xac => z.a = z.lxor(xy.getHigh()), // xor ixh / xor iyh
+        0xad => z.a = z.lxor(xy.getLow()), // xor ixl / xor iyl
+        0xae => z.a = z.lxor(z.rb(xy.getAddr(z))), // xor (ix+d) / xor (iy+d)
+
+        0xb4 => z.a = z.lor(xy.getHigh()), // or ixh / or iyh
+        0xb5 => z.a = z.lor(xy.getLow()), // or ixl / or iyl
+        0xb6 => z.a = z.lor(z.rb(xy.getAddr(z))), // or (ix+d) / or (iy+d)
+
+        0xbc => z.cp(xy.getHigh()), // cp ixh / cp iyh
+        0xbd => z.cp(xy.getLow()), // cp ixl / cp iyl
+        0xbe => z.cp(z.rb(xy.getAddr(z))), // cp (ix+d) / cp (iy+d)
+
+        0xe5 => z.push(xy.ptr.*), // push ix / push iy
+        0xe1 => xy.ptr.* = z.pop(), // pop ix / pop iy
+
+        0xe9 => {
+            const wz = z.wz;
+
+            z.jump(xy.ptr.*, true);
+            z.wz = wz;
+        }, // jp (ix) / jp (iy)
+
+        0xe3 => {
+            var val: u16 = z.rw(z.sp);
+
+            z.wz = val;
+
+            swap(&val, &xy.ptr.*);
+
+            z.ww(z.sp, val);
+        }, // ex (sp), ix / ex (sp), iy
+
         0xcb => return Z80Error.UnknownOpcode,
 
         else => {
