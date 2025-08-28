@@ -1538,6 +1538,8 @@ fn exec_opcode(z: *Z80, opcode: u8) Z80Error!void {
 
 fn exec_opcode_ed(z: *Z80, opcode: u8) Z80Error!void {
     switch (opcode) {
+        0x77, 0x7f => {}, // nop
+
         0x4b => z.setBC(z.rw(z.nextw())), // ld bc, (nn)
         0x5b => z.setDE(z.rw(z.nextw())), // ld de, (nn)
         0x6b => z.setHL(z.rw(z.nextw())), // ld hl, (nn)
@@ -1558,11 +1560,11 @@ fn exec_opcode_ed(z: *Z80, opcode: u8) Z80Error!void {
         0x62 => z.setHL(z.sbcw(z.getHL(), z.getHL())), // sbc hl, hl
         0x72 => z.setHL(z.sbcw(z.getHL(), z.sp)), // sbc hl, sp
 
-        0x44 => z.a = z.sub(0, z.a), // neg
+        0x44, 0x4c, 0x54, 0x5c, 0x64, 0x6c, 0x74, 0x7c => z.a = z.sub(0, z.a), // neg
 
-        0x46 => z.imode = .mode0, // im 0
-        0x56 => z.imode = .mode1, // im 1
-        0x5e => z.imode = .mode2, // im 2
+        0x46, 0x4e, 0x66, 0x6e => z.imode = .mode0, // im 0
+        0x56, 0x76 => z.imode = .mode1, // im 1
+        0x5e, 0x7e => z.imode = .mode2, // im 2
 
         0x78 => z.a = z.in(z.b, z.c, true), // in a, (c)
         0x40 => z.b = z.in(z.b, z.c, true), // in b, (c)
@@ -1603,7 +1605,7 @@ fn exec_opcode_ed(z: *Z80, opcode: u8) Z80Error!void {
         0xb3 => z.otir(), // otir
         0xbb => z.otdr(), // otdr
 
-        0x45 => z.retn(), // retn
+        0x45, 0x55, 0x5d, 0x65, 0x6d, 0x75, 0x7d => z.retn(), // retn
         0x4d => z.retn(), // reti
 
         0x67 => z.rrd(), // rrd
