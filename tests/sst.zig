@@ -268,7 +268,7 @@ fn expectZ80State(z: *Z80, config: TestConfig) !void {
     try expectEqual(fin.iy, z.iy);
 
     try expectEqual(fin.i, z.i);
-    // try expectEqual(fin.r, z.r); // Not implemented yet
+    try expectEqual(fin.r, z.r);
 
     try expectEqual(fin.q, z.q.val);
 

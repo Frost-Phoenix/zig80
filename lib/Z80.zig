@@ -273,6 +273,10 @@ fn swap(a: *u16, b: *u16) void {
 
 // ********** private functions ********** //
 
+fn inc_r(z: *Z80) void {
+    z.r = (z.r & 0x80) | ((z.r +% 1) & 0x7f);
+}
+
 fn inc(z: *Z80, val: u8) u8 {
     const res = val +% 1;
 
@@ -1172,6 +1176,8 @@ fn otdr(z: *Z80) void {
 }
 
 fn exec_opcode(z: *Z80, opcode: u8) Z80Error!void {
+    z.inc_r();
+
     switch (opcode) {
         0x00 => {}, // nop
 
@@ -1537,6 +1543,8 @@ fn exec_opcode(z: *Z80, opcode: u8) Z80Error!void {
 }
 
 fn exec_opcode_ed(z: *Z80, opcode: u8) Z80Error!void {
+    z.inc_r();
+
     switch (opcode) {
         0x77, 0x7f => {}, // nop
 
@@ -1616,6 +1624,8 @@ fn exec_opcode_ed(z: *Z80, opcode: u8) Z80Error!void {
 }
 
 fn exec_opcode_cb(z: *Z80, opcode: u8) Z80Error!void {
+    z.inc_r();
+
     const registers: [8]?*u8 = .{ &z.b, &z.c, &z.d, &z.e, &z.h, &z.l, null, &z.a };
 
     const _x: u2 = @truncate(opcode >> 6);
