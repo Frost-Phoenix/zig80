@@ -52,7 +52,7 @@ const TestConfig = struct {
         bc_: u16,
         de_: u16,
         hl_: u16,
-        // im
+        im: u2,
         // p
         q: u8,
         iff1: u1,
@@ -129,7 +129,9 @@ fn ioWrite(addr: u16, val: u8) void {
 }
 
 fn sstLog(comptime status: TestStatus, test_name: []const u8) void {
-    if (only_show_summary) return;
+    if (only_show_summary and status != .failed) {
+        return;
+    }
 
     const status_txt = switch (status) {
         .passed => "\x1b[32m" ++ @tagName(status) ++ "\x1b[0m",
@@ -214,6 +216,8 @@ fn setZ80State(z: *Z80, config: TestConfig) void {
     z.de_ = init.de_;
     z.hl_ = init.hl_;
 
+    z.imode = @enumFromInt(init.im);
+
     z.ix = init.ix;
     z.iy = init.iy;
 
@@ -265,6 +269,8 @@ fn expectZ80State(z: *Z80, config: TestConfig) !void {
     try expectEqual(fin.bc_, z.bc_);
     try expectEqual(fin.de_, z.de_);
     try expectEqual(fin.hl_, z.hl_);
+
+    try expectEqual(fin.im, @intFromEnum(z.imode));
 
     try expectEqual(fin.ix, z.ix);
     try expectEqual(fin.iy, z.iy);
@@ -331,6 +337,10 @@ fn runTest(configs: []TestConfig, test_name: []const u8) !void {
             test_results.failed += 1;
 
             sstLog(.failed, config.name);
+
+            if (only_show_summary) {
+                return;
+            }
 
             return err;
         };
