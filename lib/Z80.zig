@@ -163,6 +163,12 @@ pub fn step(z: *Z80) Z80Error!void {
     const opcode = z.nextb();
 
     try z.exec_opcode(opcode);
+
+    if (!z.q.changed) {
+        z.q.reset();
+    } else {
+        z.q.changed = false;
+    }
 }
 
 // ********** register helper functions ********** //
@@ -313,6 +319,10 @@ fn ldAddrWord(z: *Z80, addr: u16, val: u16) void {
 
 fn inc_r(z: *Z80) void {
     z.r = (z.r & 0x80) | ((z.r +% 1) & 0x7f);
+}
+
+fn dec_r(z: *Z80) void {
+    z.r = (z.r & 0x80) | ((z.r -% 1) & 0x7f);
 }
 
 fn inc(z: *Z80, val: u8) u8 {
@@ -1663,14 +1673,10 @@ fn exec_opcode(z: *Z80, opcode: u8) Z80Error!void {
 
         0xed => try z.exec_opcode_ed(z.nextb()), // ed prefixed opcodes
         0xcb => try z.exec_opcode_cb(z.nextb()), // cb prefixed opcodes
+        0xdd => try z.exec_opcode_xy(z.nextb(), &z.ix), // dd prefixed opcodes
+        0xfd => try z.exec_opcode_xy(z.nextb(), &z.iy), // fd prefixed opcodes
 
         else => return Z80Error.UnknownOpcode,
-    }
-
-    if (!z.q.changed) {
-        z.q.reset();
-    } else {
-        z.q.changed = false;
     }
 }
 
@@ -1800,10 +1806,32 @@ fn exec_opcode_cb(z: *Z80, opcode: u8) Z80Error!void {
                 6 => z.shift(val, .left, true),
                 7 => z.shift(val, .right, false),
             }),
-            // 1 => z.bit_test(_y, val),
+            1 => {
+                z.bit_test(_y, val);
+
+                z.f.x = getBit(11, z.wz) == 1;
+                z.f.y = getBit(13, z.wz) == 1;
+
+                z.q.set(z.f.getF());
+            },
             2 => z.wb(hl, resetBit(_y, val)),
             3 => z.wb(hl, setBit(_y, val)),
-            else => return Z80Error.UnknownOpcode,
         }
+    }
+}
+
+fn exec_opcode_xy(z: *Z80, opcode: u8, xy: *u16) Z80Error!void {
+    z.inc_r();
+
+    _ = xy;
+
+    switch (opcode) {
+        0xcb => return Z80Error.UnknownOpcode,
+
+        else => {
+            z.dec_r();
+
+            try z.exec_opcode(opcode);
+        },
     }
 }
