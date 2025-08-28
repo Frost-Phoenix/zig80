@@ -77,17 +77,6 @@ iy: u16,
 i: u8,
 r: u8,
 
-// special purpose registers
-pc: u16,
-sp: u16,
-
-// interrupt flip-flops
-iff1: bool,
-iff2: bool,
-
-// interrupt mode
-imode: enum { mode0, mode1, mode2 },
-
 // Simulate Q register, used in scf/ccf flags calculation
 // If the last instruction changed the flags, Q = F, else Q = 0
 q: struct {
@@ -105,6 +94,20 @@ q: struct {
         self.val = 0;
     }
 },
+
+// MEMPTR
+wz: u16,
+
+// special purpose registers
+pc: u16,
+sp: u16,
+
+// interrupt flip-flops
+iff1: bool,
+iff2: bool,
+
+// interrupt mode
+imode: enum { mode0, mode1, mode2 },
 
 memRead: memReadFnPtr,
 memWrite: memWriteFnPtr,
@@ -137,6 +140,8 @@ pub fn init(config: Z80Config) Z80 {
         .r = 0,
 
         .q = .{ .val = 0, .changed = false },
+
+        .wz = 0,
 
         .pc = 0,
         .sp = 0xffff,
@@ -187,6 +192,11 @@ fn getHL(z: *Z80) u16 {
 fn setHL(z: *Z80, val: u16) void {
     z.h = @truncate(val >> 8);
     z.l = @truncate(val & 0xff);
+}
+
+// used for ldWordAddr
+fn setSP(z: *Z80, val: u16) void {
+    z.sp = val;
 }
 
 fn getAF(z: *Z80) u16 {
@@ -273,6 +283,34 @@ fn swap(a: *u16, b: *u16) void {
 
 // ********** private functions ********** //
 
+fn ldAAddr(z: *Z80, addr: u16) void {
+    const val = z.rb(addr);
+
+    z.a = val;
+
+    z.wz = addr +% 1;
+}
+
+fn ldAddrA(z: *Z80, addr: u16) void {
+    z.wb(addr, z.a);
+
+    z.wz = (@as(u16, z.a) << 8) | ((addr +% 1) & 0xff);
+}
+
+fn ldWordAddr(z: *Z80, setReg: fn (*Z80, u16) void, addr: u16) void {
+    const val = z.rw(addr);
+
+    setReg(z, val);
+
+    z.wz = addr +% 1;
+}
+
+fn ldAddrWord(z: *Z80, addr: u16, val: u16) void {
+    z.ww(addr, val);
+
+    z.wz = addr +% 1;
+}
+
 fn inc_r(z: *Z80) void {
     z.r = (z.r & 0x80) | ((z.r +% 1) & 0x7f);
 }
@@ -339,6 +377,8 @@ fn addw(z: *Z80, a: u16, b: u16) u16 {
 
     z.q.set(z.f.getF());
 
+    z.wz = a +% 1;
+
     return res;
 }
 
@@ -356,6 +396,8 @@ fn adcw(z: *Z80, a: u16, b: u16) u16 {
     z.f.s = (res >> 15) == 1;
 
     z.q.set(z.f.getF());
+
+    z.wz = a +% 1;
 
     return res;
 }
@@ -425,6 +467,8 @@ fn sbcw(z: *Z80, a: u16, b: u16) u16 {
     z.f.s = (res >> 15) == 1;
 
     z.q.set(z.f.getF());
+
+    z.wz = a +% 1;
 
     return res;
 }
@@ -716,6 +760,8 @@ fn rrd(z: *Z80) void {
     z.f.s = (z.a >> 7) == 1;
 
     z.q.set(z.f.getF());
+
+    z.wz = z.getHL() +% 1;
 }
 
 fn rld(z: *Z80) void {
@@ -741,6 +787,8 @@ fn rld(z: *Z80) void {
     z.f.s = (z.a >> 7) == 1;
 
     z.q.set(z.f.getF());
+
+    z.wz = z.getHL() +% 1;
 }
 
 fn bit_test(z: *Z80, bit: u3, val: u8) void {
@@ -784,6 +832,8 @@ fn pop(z: *Z80) u16 {
 }
 
 fn jump(z: *Z80, addr: u16, condition: bool) void {
+    z.wz = addr;
+
     if (!condition) return;
 
     z.pc = addr;
@@ -792,9 +842,11 @@ fn jump(z: *Z80, addr: u16, condition: bool) void {
 fn jr(z: *Z80, offset: u8, condition: bool) void {
     if (!condition) return;
 
-    const offset_signed: i8 = @bitCast(offset);
+    const offset_signed: u16 = @bitCast(@as(i16, @as(i8, @bitCast(offset))));
 
-    z.pc +%= @as(u16, @bitCast(@as(i16, offset_signed)));
+    z.wz = z.pc +% offset_signed;
+
+    z.pc +%= offset_signed;
 }
 
 fn djnz(z: *Z80, addr: u8) void {
@@ -806,6 +858,8 @@ fn djnz(z: *Z80, addr: u8) void {
 }
 
 fn call(z: *Z80, addr: u16, condition: bool) void {
+    z.wz = addr;
+
     if (!condition) return;
 
     z.push(z.pc);
@@ -815,6 +869,8 @@ fn call(z: *Z80, addr: u16, condition: bool) void {
 fn ret(z: *Z80, condition: bool) void {
     if (!condition) return;
 
+    z.wz = z.rw(z.sp);
+
     z.pc = z.pop();
 }
 
@@ -822,6 +878,8 @@ fn rst(z: *Z80, addr: u8) void {
     z.push(z.pc);
 
     z.pc = @intCast(addr);
+
+    z.wz = z.pc;
 }
 
 fn di(z: *Z80) void {
@@ -844,6 +902,8 @@ fn out(z: *Z80, high_byte: u8, port: u8, val: u8) void {
     const addr = (@as(u16, high_byte) << 8) | port;
 
     z.ioWrite(addr, val);
+
+    z.wz = z.getBC() +% 1;
 }
 
 fn in(z: *Z80, high_byte: u8, port: u8, update_flags: bool) u8 {
@@ -861,6 +921,8 @@ fn in(z: *Z80, high_byte: u8, port: u8, update_flags: bool) u8 {
 
         z.q.set(z.f.getF());
     }
+
+    z.wz = z.getBC() +% 1;
 
     return res;
 }
@@ -932,6 +994,8 @@ fn ldir(z: *Z80) void {
         z.f.y = getBit(13, z.pc) == 1;
 
         z.q.set(z.f.getF());
+
+        z.wz = z.pc +% 1;
     }
 }
 
@@ -945,6 +1009,8 @@ fn lddr(z: *Z80) void {
         z.f.y = getBit(13, z.pc) == 1;
 
         z.q.set(z.f.getF());
+
+        z.wz = z.pc +% 1;
     }
 }
 
@@ -968,12 +1034,16 @@ fn cpi(z: *Z80) void {
     z.f.y = getBit(1, res -% @intFromBool(z.f.h)) == 1;
 
     z.q.set(z.f.getF());
+
+    z.wz +%= 1;
 }
 
 fn cpd(z: *Z80) void {
     z.cpi();
 
     z.setHL(z.getHL() -% 2);
+
+    z.wz -%= 2;
 }
 
 fn cpir(z: *Z80) void {
@@ -986,6 +1056,8 @@ fn cpir(z: *Z80) void {
         z.f.y = getBit(13, z.pc) == 1;
 
         z.q.set(z.f.getF());
+
+        z.wz = z.pc +% 1;
     }
 }
 
@@ -999,13 +1071,16 @@ fn cpdr(z: *Z80) void {
         z.f.y = getBit(13, z.pc) == 1;
 
         z.q.set(z.f.getF());
+
+        z.wz = z.pc +% 1;
     }
 }
 
 fn ini(z: *Z80) void {
     const hl = z.getHL();
-
     const val = z.in(z.b, z.c, false);
+
+    z.wz = z.getBC() +% 1;
 
     z.wb(hl, val);
 
@@ -1025,8 +1100,9 @@ fn ini(z: *Z80) void {
 
 fn ind(z: *Z80) void {
     const hl = z.getHL();
-
     const val = z.in(z.b, z.c, false);
+
+    z.wz = z.getBC() -% 1;
 
     z.wb(hl, val);
 
@@ -1063,6 +1139,8 @@ fn inir(z: *Z80) void {
         } else {
             z.f.pv = (@intFromBool(z.f.pv) ^ (@intFromBool(parity(z.b & 0x7)) ^ 1)) == 1;
         }
+
+        z.wz = z.pc +% 1;
     } else {
         z.f.x = false;
         z.f.y = false;
@@ -1092,6 +1170,8 @@ fn indr(z: *Z80) void {
         } else {
             z.f.pv = (@intFromBool(z.f.pv) ^ (@intFromBool(parity(z.b & 0x7)) ^ 1)) == 1;
         }
+
+        z.wz = z.pc +% 1;
     } else {
         z.f.x = false;
         z.f.y = false;
@@ -1104,14 +1184,13 @@ fn indr(z: *Z80) void {
 
 fn outi(z: *Z80) void {
     const hl = z.getHL();
+    const val = z.rb(hl);
 
     z.b = z.dec(z.b);
-
-    const val = z.rb(hl);
+    z.setHL(hl +% 1);
 
     z.out(z.b, z.c, val);
 
-    z.setHL(hl +% 1);
     const val_16 = @as(u16, val);
     const carry_test = (val_16 +% z.l) > 255;
 
@@ -1121,18 +1200,18 @@ fn outi(z: *Z80) void {
     z.f.h = carry_test;
 
     z.q.set(z.f.getF());
+
+    z.wz = z.getBC() +% 1;
 }
 
 fn outd(z: *Z80) void {
     const hl = z.getHL();
-
-    z.b = z.dec(z.b);
-
     const val = z.rb(hl);
 
-    z.out(z.b, z.c, val);
-
+    z.b = z.dec(z.b);
     z.setHL(hl -% 1);
+
+    z.out(z.b, z.c, val);
 
     const val_16 = @as(u16, val);
     const carry_test = (val_16 +% z.l) > 255;
@@ -1143,6 +1222,8 @@ fn outd(z: *Z80) void {
     z.f.h = carry_test;
 
     z.q.set(z.f.getF());
+
+    z.wz = z.getBC() -% 1;
 }
 
 fn otir(z: *Z80) void {
@@ -1164,6 +1245,8 @@ fn otir(z: *Z80) void {
         } else {
             z.f.pv = (@intFromBool(z.f.pv) ^ (@intFromBool(parity(z.b & 0x7)) ^ 1)) == 1;
         }
+
+        z.wz = z.pc +% 1;
     } else {
         z.f.x = false;
         z.f.y = false;
@@ -1193,6 +1276,8 @@ fn otdr(z: *Z80) void {
         } else {
             z.f.pv = (@intFromBool(z.f.pv) ^ (@intFromBool(parity(z.b & 0x7)) ^ 1)) == 1;
         }
+
+        z.wz = z.pc +% 1;
     } else {
         z.f.x = false;
         z.f.y = false;
@@ -1277,11 +1362,11 @@ fn exec_opcode(z: *Z80, opcode: u8) Z80Error!void {
         0x11 => z.setDE(z.nextw()), // ld de, nn
         0x21 => z.setHL(z.nextw()), // ld hl, nn
 
-        0x0a => z.a = z.rb(z.getBC()), // ld a, (bc)
-        0x1a => z.a = z.rb(z.getDE()), // ld a, (de)
+        0x0a => z.ldAAddr(z.getBC()), // ld a, (bc)
+        0x1a => z.ldAAddr(z.getDE()), // ld a, (de)
 
-        0x02 => z.wb(z.getBC(), z.a), // ld (bc), a
-        0x12 => z.wb(z.getDE(), z.a), // ld (de), a
+        0x02 => z.ldAddrA(z.getBC()), // ld (bc), a
+        0x12 => z.ldAddrA(z.getDE()), // ld (de), a
 
         0x7e => z.a = z.rb(z.getHL()), // ld a, (hl)
         0x46 => z.b = z.rb(z.getHL()), // ld b, (hl)
@@ -1300,11 +1385,11 @@ fn exec_opcode(z: *Z80, opcode: u8) Z80Error!void {
         0x74 => z.wb(z.getHL(), z.h), // ld (hl), h
         0x75 => z.wb(z.getHL(), z.l), // ld (hl), l
 
-        0x32 => z.wb(z.nextw(), z.a), // ld (nn), a
-        0x22 => z.ww(z.nextw(), z.getHL()), // ld (nn), hl
+        0x32 => z.ldAddrA(z.nextw()), // ld (nn), a
+        0x22 => z.ldAddrWord(z.nextw(), z.getHL()), // ld (nn), hl
 
-        0x3a => z.a = z.rb(z.nextw()), // ld a, (nn)
-        0x2a => z.setHL(z.rw(z.nextw())), // ld hl, (nn)
+        0x3a => z.ldAAddr(z.nextw()), // ld a, (nn)
+        0x2a => z.ldWordAddr(setHL, z.nextw()), // ld hl, (nn)
 
         0x31 => z.sp = z.nextw(), // ld sp, nn
         0xf9 => z.sp = z.getHL(), // ld sp, hl
@@ -1468,6 +1553,8 @@ fn exec_opcode(z: *Z80, opcode: u8) Z80Error!void {
             var val: u16 = z.rw(z.sp);
             var hl: u16 = z.getHL();
 
+            z.wz = val;
+
             swap(&val, &hl);
 
             z.ww(z.sp, val);
@@ -1496,7 +1583,12 @@ fn exec_opcode(z: *Z80, opcode: u8) Z80Error!void {
         0xf1 => z.setAF(z.pop()), // pop af
 
         0xc3 => z.jump(z.nextw(), true), // jp nn
-        0xe9 => z.jump(z.getHL(), true), // jp (hl)
+        0xe9 => {
+            const wz = z.wz;
+
+            z.jump(z.getHL(), true);
+            z.wz = wz;
+        }, // jp (hl)
 
         0xca => z.jump(z.nextw(), z.f.z), // jp z, nn
         0xda => z.jump(z.nextw(), z.f.c), // jp c, nn
@@ -1554,8 +1646,20 @@ fn exec_opcode(z: *Z80, opcode: u8) Z80Error!void {
         0xf3 => z.di(), // di
         0xfb => z.ei(), // ei
 
-        0xd3 => z.out(z.a, z.nextb(), z.a), // out (n), a
-        0xdb => z.a = z.in(z.a, z.nextb(), false), // in a, (n)
+        0xd3 => {
+            const port = z.nextb();
+            const wz = (@as(u16, z.a) << 8) | (port +% 1);
+
+            z.out(z.a, port, z.a);
+            z.wz = wz;
+        }, // out (n), a
+        0xdb => {
+            const port = z.nextb();
+            const wz = ((@as(u16, z.a) << 8) | port) +% 1;
+
+            z.a = z.in(z.a, port, false);
+            z.wz = wz;
+        }, // in a, (n)
 
         0xed => try z.exec_opcode_ed(z.nextb()), // ed prefixed opcodes
         0xcb => try z.exec_opcode_cb(z.nextb()), // cb prefixed opcodes
@@ -1581,15 +1685,15 @@ fn exec_opcode_ed(z: *Z80, opcode: u8) Z80Error!void {
         0x57 => z.ld_a_i(), // ld a, i
         0x5f => z.ld_a_r(), // ld a, r
 
-        0x4b => z.setBC(z.rw(z.nextw())), // ld bc, (nn)
-        0x5b => z.setDE(z.rw(z.nextw())), // ld de, (nn)
-        0x6b => z.setHL(z.rw(z.nextw())), // ld hl, (nn)
-        0x7b => z.sp = z.rw(z.nextw()), // ld sp, (nn)
+        0x4b => z.ldWordAddr(setBC, z.nextw()), // ld bc, (nn)
+        0x5b => z.ldWordAddr(setDE, z.nextw()), // ld de, (nn)
+        0x6b => z.ldWordAddr(setHL, z.nextw()), // ld hl, (nn)
+        0x7b => z.ldWordAddr(setSP, z.nextw()), // ld sp, (nn)
 
-        0x43 => z.ww(z.nextw(), z.getBC()), // ld (nn), bc
-        0x53 => z.ww(z.nextw(), z.getDE()), // ld (nn), de
-        0x63 => z.ww(z.nextw(), z.getHL()), // ld (nn), hl
-        0x73 => z.ww(z.nextw(), z.sp), // ld (nn), sp
+        0x43 => z.ldAddrWord(z.nextw(), z.getBC()), // ld (nn), bc
+        0x53 => z.ldAddrWord(z.nextw(), z.getDE()), // ld (nn), de
+        0x63 => z.ldAddrWord(z.nextw(), z.getHL()), // ld (nn), hl
+        0x73 => z.ldAddrWord(z.nextw(), z.sp), // ld (nn), sp
 
         0x4a => z.setHL(z.adcw(z.getHL(), z.getBC())), // adc hl, bc
         0x5a => z.setHL(z.adcw(z.getHL(), z.getDE())), // adc hl, de

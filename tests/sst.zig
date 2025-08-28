@@ -222,6 +222,8 @@ fn setZ80State(z: *Z80, config: TestConfig) void {
 
     z.q.val = init.q;
 
+    z.wz = init.wz;
+
     z.iff1 = init.iff1 == 1;
     z.iff2 = init.iff2 == 1;
 
@@ -271,6 +273,8 @@ fn expectZ80State(z: *Z80, config: TestConfig) !void {
     try expectEqual(fin.r, z.r);
 
     try expectEqual(fin.q, z.q.val);
+
+    try expectEqual(fin.wz, z.wz);
 
     try expectEqual(fin.iff1 == 1, z.iff1);
     try expectEqual(fin.iff2 == 1, z.iff2);
