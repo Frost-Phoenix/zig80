@@ -865,6 +865,34 @@ fn in(z: *Z80, high_byte: u8, port: u8, update_flags: bool) u8 {
     return res;
 }
 
+fn ld_a_i(z: *Z80) void {
+    z.a = z.i;
+
+    z.f.n = false;
+    z.f.pv = z.iff2;
+    z.f.x = getBit(3, z.a) == 1;
+    z.f.h = false;
+    z.f.y = getBit(5, z.a) == 1;
+    z.f.z = z.a == 0;
+    z.f.s = (z.a >> 7) == 1;
+
+    z.q.set(z.f.getF());
+}
+
+fn ld_a_r(z: *Z80) void {
+    z.a = z.r;
+
+    z.f.n = false;
+    z.f.pv = z.iff2;
+    z.f.x = getBit(3, z.a) == 1;
+    z.f.h = false;
+    z.f.y = getBit(5, z.a) == 1;
+    z.f.z = z.a == 0;
+    z.f.s = (z.a >> 7) == 1;
+
+    z.q.set(z.f.getF());
+}
+
 fn ldi(z: *Z80) void {
     const bc = z.getBC();
     const de = z.getDE();
@@ -1547,6 +1575,11 @@ fn exec_opcode_ed(z: *Z80, opcode: u8) Z80Error!void {
 
     switch (opcode) {
         0x77, 0x7f => {}, // nop
+
+        0x47 => z.i = z.a, // ld i, a
+        0x4f => z.r = z.a, // ld r, a
+        0x57 => z.ld_a_i(), // ld a, i
+        0x5f => z.ld_a_r(), // ld a, r
 
         0x4b => z.setBC(z.rw(z.nextw())), // ld bc, (nn)
         0x5b => z.setDE(z.rw(z.nextw())), // ld de, (nn)
