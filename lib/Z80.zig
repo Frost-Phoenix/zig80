@@ -780,6 +780,12 @@ fn ei(z: *Z80) void {
     z.iff2 = true;
 }
 
+fn retn(z: *Z80) void {
+    z.iff1 = z.iff2;
+
+    z.ret(true);
+}
+
 fn out(z: *Z80, high_byte: u8, port: u8, val: u8) void {
     const addr = (@as(u16, high_byte) << 8) | port;
 
@@ -1546,6 +1552,9 @@ fn exec_opcode_ed(z: *Z80, opcode: u8) Z80Error!void {
         0xab => z.outd(), // outd
         0xb3 => z.otir(), // otir
         0xbb => z.otdr(), // otdr
+
+        0x45 => z.retn(), // retn
+        0x4d => z.retn(), // reti
 
         else => return Z80Error.UnknownOpcode,
     }
