@@ -689,6 +689,56 @@ fn shift(z: *Z80, val: u8, dir: ShiftDir, fill: bool) u8 {
     return res;
 }
 
+fn rrd(z: *Z80) void {
+    const val = z.rb(z.getHL());
+    var res: u8 = 0;
+
+    const a_low_nibble: u4 = @truncate(z.a & 0xf);
+    const val_low_nibble: u4 = @truncate(val & 0xf);
+    const val_high_nibble: u4 = @truncate((val & 0xf0) >> 4);
+
+    z.a = (z.a & 0xf0) | val_low_nibble;
+    res |= val_high_nibble;
+    res |= @as(u8, a_low_nibble) << 4;
+
+    z.wb(z.getHL(), res);
+
+    z.f.n = false;
+    z.f.pv = parity(z.a);
+    z.f.x = getBit(3, z.a) == 1;
+    z.f.h = false;
+    z.f.y = getBit(5, z.a) == 1;
+    z.f.z = z.a == 0;
+    z.f.s = (z.a >> 7) == 1;
+
+    z.q.set(z.f.getF());
+}
+
+fn rld(z: *Z80) void {
+    const val = z.rb(z.getHL());
+    var res: u8 = 0;
+
+    const a_low_nibble: u4 = @truncate(z.a & 0xf);
+    const val_low_nibble: u4 = @truncate(val & 0xf);
+    const val_high_nibble: u4 = @truncate((val & 0xf0) >> 4);
+
+    z.a = (z.a & 0xf0) | val_high_nibble;
+    res |= a_low_nibble;
+    res |= @as(u8, val_low_nibble) << 4;
+
+    z.wb(z.getHL(), res);
+
+    z.f.n = false;
+    z.f.pv = parity(z.a);
+    z.f.x = getBit(3, z.a) == 1;
+    z.f.h = false;
+    z.f.y = getBit(5, z.a) == 1;
+    z.f.z = z.a == 0;
+    z.f.s = (z.a >> 7) == 1;
+
+    z.q.set(z.f.getF());
+}
+
 fn bit_test(z: *Z80, bit: u3, val: u8) void {
     z.f.n = false;
     z.f.pv = getBit(bit, val) == 0;
@@ -1555,6 +1605,9 @@ fn exec_opcode_ed(z: *Z80, opcode: u8) Z80Error!void {
 
         0x45 => z.retn(), // retn
         0x4d => z.retn(), // reti
+
+        0x67 => z.rrd(), // rrd
+        0x6f => z.rld(), // rld
 
         else => return Z80Error.UnknownOpcode,
     }
