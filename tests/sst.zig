@@ -344,6 +344,8 @@ fn runTest(configs: []TestConfig, test_name: []const u8) !void {
 
             return err;
         };
+
+        z.reset();
     }
 
     results.passed += 1;

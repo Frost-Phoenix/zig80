@@ -109,6 +109,8 @@ iff2: bool,
 // interrupt mode
 imode: enum { mode0, mode1, mode2 },
 
+is_halted: bool,
+
 memRead: memReadFnPtr,
 memWrite: memWriteFnPtr,
 
@@ -118,48 +120,60 @@ ioWrite: ioWriteFnPtr,
 // ********** public functions ********** //
 
 pub fn init(config: Z80Config) Z80 {
-    return .{
-        .a = 0xff,
-        .f = @bitCast(@as(u8, 0xff)),
-        .b = 0,
-        .c = 0,
-        .d = 0,
-        .e = 0,
-        .h = 0,
-        .l = 0,
+    var z: Z80 = undefined;
 
-        .af_ = 0,
-        .bc_ = 0,
-        .de_ = 0,
-        .hl_ = 0,
+    z.reset();
 
-        .ix = 0,
-        .iy = 0,
+    z.memRead = config.memRead;
+    z.memWrite = config.memWrite;
 
-        .i = 0,
-        .r = 0,
+    z.ioRead = config.ioRead;
+    z.ioWrite = config.ioWrite;
 
-        .q = .{ .val = 0, .changed = false },
+    return z;
+}
 
-        .wz = 0,
+pub fn reset(z: *Z80) void {
+    z.a = 0xff;
+    z.f = @bitCast(@as(u8, 0xff));
+    z.b = 0;
+    z.c = 0;
+    z.d = 0;
+    z.e = 0;
+    z.h = 0;
+    z.l = 0;
 
-        .pc = 0,
-        .sp = 0xffff,
+    z.af_ = 0;
+    z.bc_ = 0;
+    z.de_ = 0;
+    z.hl_ = 0;
 
-        .iff1 = false,
-        .iff2 = false,
+    z.ix = 0;
+    z.iy = 0;
 
-        .imode = .mode0,
+    z.i = 0;
+    z.r = 0;
 
-        .memRead = config.memRead,
-        .memWrite = config.memWrite,
+    z.q = .{ .val = 0, .changed = false };
 
-        .ioRead = config.ioRead,
-        .ioWrite = config.ioWrite,
-    };
+    z.wz = 0;
+
+    z.pc = 0;
+    z.sp = 0xffff;
+
+    z.iff1 = false;
+    z.iff2 = false;
+
+    z.imode = .mode0;
+
+    z.is_halted = false;
 }
 
 pub fn step(z: *Z80) Z80Error!void {
+    if (z.is_halted) {
+        return;
+    }
+
     const opcode = z.nextb();
 
     try z.exec_opcode(opcode);
@@ -1304,6 +1318,8 @@ fn exec_opcode(z: *Z80, opcode: u8) Z80Error!void {
     switch (opcode) {
         0x00 => {}, // nop
 
+        0x76 => z.is_halted = true, // halt
+
         0x7f => z.a = z.a, // ld a, a
         0x78 => z.a = z.b, // ld a, b
         0x79 => z.a = z.c, // ld a, c
@@ -1675,8 +1691,6 @@ fn exec_opcode(z: *Z80, opcode: u8) Z80Error!void {
         0xed => try z.exec_opcode_ed(z.nextb()), // ed prefixed opcodes
         0xdd => try z.exec_opcode_xy(z.nextb(), &z.ix), // dd prefixed opcodes
         0xfd => try z.exec_opcode_xy(z.nextb(), &z.iy), // fd prefixed opcodes
-
-        else => return Z80Error.UnknownOpcode,
     }
 }
 
