@@ -58,6 +58,7 @@ z80test() {
   unzip "$TEMP_DIR/z80test-1.2a.zip" -d "$TEMP_DIR"
 
   cp "$TEMP_DIR"/z80test-1.2a/*.tap "$TARGET_DIR"
+  rm "$TARGET_DIR/z80ccfscr.tap"
 
   rm -rf "$TEMP_DIR"
 }
