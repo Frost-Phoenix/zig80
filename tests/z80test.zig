@@ -95,9 +95,10 @@ fn runTest(allocaor: Allocator, rom_name: []const u8) !void {
             if (char == '\r') char = '\n';
             if (char == 23 or char == 26) char = ' ';
 
-            // stdout.print("({})", .{char}) catch {};
-            stdout.print("{c}", .{char}) catch {};
-            stdout.flush() catch {};
+            if ((33 <= char and char <= 126) or char == '\n' or char == ' ') {
+                stdout.print("{c}", .{char}) catch {};
+                stdout.flush() catch {};
+            }
         }
     }
 
