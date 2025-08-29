@@ -1088,7 +1088,7 @@ fn cpir(z: *Z80) void {
 fn cpdr(z: *Z80) void {
     z.cpd();
 
-    if (z.getBC() != 0) {
+    if (z.getBC() != 0 and z.f.z == false) {
         z.pc -%= 2;
 
         z.f.x = getBit(11, z.pc) == 1;
