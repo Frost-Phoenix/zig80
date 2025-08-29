@@ -52,9 +52,31 @@ pub fn build(b: *std.Build) void {
     run_step_zex.dependOn(&run_cmd_zex.step);
     run_cmd_zex.step.dependOn(b.getInstallStep());
 
+    const test_z80test = b.addExecutable(.{
+        .name = "zig80_test_z80test",
+
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tests/z80test.zig"),
+
+            .target = target,
+            .optimize = optimize,
+
+            .imports = &.{
+                .{ .name = "zig80", .module = mod_zig80 },
+            },
+        }),
+    });
+
+    const run_step_z80test = b.step("test-z80test", "Run Single Step Tests");
+    const run_cmd_z80test = b.addRunArtifact(test_z80test);
+
+    run_step_z80test.dependOn(&run_cmd_z80test.step);
+    run_cmd_z80test.step.dependOn(b.getInstallStep());
+
     if (b.args) |args| {
         run_cmd_sst.addArgs(args);
         run_cmd_zex.addArgs(args);
+        run_cmd_z80test.addArgs(args);
     }
 
     // "check" step used by ZLS for Build-On-Save.
