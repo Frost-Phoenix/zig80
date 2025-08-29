@@ -169,14 +169,14 @@ pub fn reset(z: *Z80) void {
     z.is_halted = false;
 }
 
-pub fn step(z: *Z80) Z80Error!void {
+pub fn step(z: *Z80) void {
     if (z.is_halted) {
         return;
     }
 
     const opcode = z.nextb();
 
-    try z.exec_opcode(opcode);
+    z.exec_opcode(opcode);
 
     if (!z.q.changed) {
         z.q.reset();
@@ -1312,7 +1312,7 @@ fn otdr(z: *Z80) void {
     z.q.set(z.f.getF());
 }
 
-fn exec_opcode(z: *Z80, opcode: u8) Z80Error!void {
+fn exec_opcode(z: *Z80, opcode: u8) void {
     z.inc_r();
 
     switch (opcode) {
@@ -1688,13 +1688,13 @@ fn exec_opcode(z: *Z80, opcode: u8) Z80Error!void {
         }, // in a, (n)
 
         0xcb => z.exec_opcode_cb(z.nextb()), // cb prefixed opcodes
-        0xed => try z.exec_opcode_ed(z.nextb()), // ed prefixed opcodes
-        0xdd => try z.exec_opcode_xy(z.nextb(), &z.ix), // dd prefixed opcodes
-        0xfd => try z.exec_opcode_xy(z.nextb(), &z.iy), // fd prefixed opcodes
+        0xed => z.exec_opcode_ed(z.nextb()), // ed prefixed opcodes
+        0xdd => z.exec_opcode_xy(z.nextb(), &z.ix), // dd prefixed opcodes
+        0xfd => z.exec_opcode_xy(z.nextb(), &z.iy), // fd prefixed opcodes
     }
 }
 
-fn exec_opcode_ed(z: *Z80, opcode: u8) Z80Error!void {
+fn exec_opcode_ed(z: *Z80, opcode: u8) void {
     z.inc_r();
 
     switch (opcode) {
@@ -1776,7 +1776,7 @@ fn exec_opcode_ed(z: *Z80, opcode: u8) Z80Error!void {
         0x67 => z.rrd(), // rrd
         0x6f => z.rld(), // rld
 
-        else => return Z80Error.UnknownOpcode,
+        else => {}, // nop
     }
 }
 
@@ -1834,7 +1834,7 @@ fn exec_opcode_cb(z: *Z80, opcode: u8) void {
     }
 }
 
-fn exec_opcode_xy(z: *Z80, opcode: u8, xy_ptr: *u16) Z80Error!void {
+fn exec_opcode_xy(z: *Z80, opcode: u8, xy_ptr: *u16) void {
     z.inc_r();
 
     var xy: struct {
@@ -2021,7 +2021,7 @@ fn exec_opcode_xy(z: *Z80, opcode: u8, xy_ptr: *u16) Z80Error!void {
         else => {
             z.dec_r();
 
-            try z.exec_opcode(opcode);
+            z.exec_opcode(opcode);
         },
     }
 }

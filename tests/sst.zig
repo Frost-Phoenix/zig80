@@ -318,19 +318,7 @@ fn runTest(configs: []TestConfig, test_name: []const u8) !void {
     for (configs) |config| {
         setZ80State(&z, config);
 
-        z.step() catch |err| switch (err) {
-            Z80.Z80Error.UnknownOpcode => {
-                results.skipped += 1;
-                test_results.skipped += 1;
-
-                if (!ignore_unknown_opcodes_warnig) {
-                    sstLog(.skipped, test_name);
-                }
-
-                return;
-            },
-            else => return err,
-        };
+        z.step();
 
         expectZ80State(&z, config) catch |err| {
             results.failed += 1;
