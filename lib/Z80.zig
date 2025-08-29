@@ -1428,9 +1428,9 @@ fn exec_opcode(z: *Z80, opcode: u8) Z80Error!void {
         0x24 => z.h = z.inc(z.h), // inc h
         0x2c => z.l = z.inc(z.l), // inc l
 
-        0x03 => z.setBC(z.getBC() + 1), // inc bc
-        0x13 => z.setDE(z.getDE() + 1), // inc de
-        0x23 => z.setHL(z.getHL() + 1), // inc hl
+        0x03 => z.setBC(z.getBC() +% 1), // inc bc
+        0x13 => z.setDE(z.getDE() +% 1), // inc de
+        0x23 => z.setHL(z.getHL() +% 1), // inc hl
         0x33 => z.sp +%= 1, // inc sp
 
         0x34 => z.wb(z.getHL(), z.inc(z.rb(z.getHL()))), // inc (hl)
@@ -1470,9 +1470,9 @@ fn exec_opcode(z: *Z80, opcode: u8) Z80Error!void {
         0x25 => z.h = z.dec(z.h), // dec h
         0x2d => z.l = z.dec(z.l), // dec l
 
-        0x0b => z.setBC(z.getBC() - 1), // dec bc
-        0x1b => z.setDE(z.getDE() - 1), // dec de
-        0x2b => z.setHL(z.getHL() - 1), // dec hl
+        0x0b => z.setBC(z.getBC() -% 1), // dec bc
+        0x1b => z.setDE(z.getDE() -% 1), // dec de
+        0x2b => z.setHL(z.getHL() -% 1), // dec hl
         0x3b => z.sp -%= 1, // dec sp
 
         0x35 => z.wb(z.getHL(), z.dec(z.rb(z.getHL()))), // dec (hl)
