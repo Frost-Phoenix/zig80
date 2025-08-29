@@ -1671,8 +1671,8 @@ fn exec_opcode(z: *Z80, opcode: u8) Z80Error!void {
             z.wz = wz;
         }, // in a, (n)
 
+        0xcb => z.exec_opcode_cb(z.nextb()), // cb prefixed opcodes
         0xed => try z.exec_opcode_ed(z.nextb()), // ed prefixed opcodes
-        0xcb => try z.exec_opcode_cb(z.nextb()), // cb prefixed opcodes
         0xdd => try z.exec_opcode_xy(z.nextb(), &z.ix), // dd prefixed opcodes
         0xfd => try z.exec_opcode_xy(z.nextb(), &z.iy), // fd prefixed opcodes
 
@@ -1766,7 +1766,7 @@ fn exec_opcode_ed(z: *Z80, opcode: u8) Z80Error!void {
     }
 }
 
-fn exec_opcode_cb(z: *Z80, opcode: u8) Z80Error!void {
+fn exec_opcode_cb(z: *Z80, opcode: u8) void {
     z.inc_r();
 
     const registers: [8]?*u8 = .{ &z.b, &z.c, &z.d, &z.e, &z.h, &z.l, null, &z.a };
@@ -1998,12 +1998,57 @@ fn exec_opcode_xy(z: *Z80, opcode: u8, xy_ptr: *u16) Z80Error!void {
             z.ww(z.sp, val);
         }, // ex (sp), ix / ex (sp), iy
 
-        0xcb => return Z80Error.UnknownOpcode,
+        0xcb => {
+            const addr = xy.getAddr(z);
+
+            z.exec_opcode_xy_cb(z.nextb(), addr);
+        },
 
         else => {
             z.dec_r();
 
             try z.exec_opcode(opcode);
         },
+    }
+}
+
+fn exec_opcode_xy_cb(z: *Z80, opcode: u8, addr: u16) void {
+    const registers: [8]?*u8 = .{ &z.b, &z.c, &z.d, &z.e, &z.h, &z.l, null, &z.a };
+
+    const _x: u2 = @truncate(opcode >> 6);
+    const _y: u3 = @truncate((opcode >> 3) & 0b111);
+    const _z: u3 = @truncate(opcode & 0b111);
+
+    const val = z.rb(addr);
+
+    const res = switch (_x) {
+        0 => switch (_y) {
+            0 => z.rotate(val, .left, true),
+            1 => z.rotate(val, .right, true),
+            2 => z.rotate(val, .left, false),
+            3 => z.rotate(val, .right, false),
+            4 => z.shift(val, .left, false),
+            5 => z.shift(val, .right, true),
+            6 => z.shift(val, .left, true),
+            7 => z.shift(val, .right, false),
+        },
+        1 => {
+            z.bit_test(_y, val);
+
+            z.f.x = getBit(11, addr) == 1;
+            z.f.y = getBit(13, addr) == 1;
+
+            z.q.set(z.f.getF());
+
+            return;
+        },
+        2 => resetBit(_y, val),
+        3 => setBit(_y, val),
+    };
+
+    z.wb(addr, res);
+
+    if (registers[_z]) |r| {
+        r.* = res;
     }
 }
