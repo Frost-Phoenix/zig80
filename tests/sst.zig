@@ -28,7 +28,7 @@ const TestConfig = struct {
     name: []const u8,
     initial: CPUState,
     final: CPUState,
-    // cycles
+    cycles: [][3]json.Value,
     ports: ?[][3]json.Value = null,
 
     const CPUState = struct {
@@ -284,6 +284,8 @@ fn expectZ80State(z: *Z80, config: TestConfig) !void {
 
     try expectEqual(fin.iff1 == 1, z.iff1);
     try expectEqual(fin.iff2 == 1, z.iff2);
+
+    try expectEqual(config.cycles.len, z.cycles);
 
     for (fin.ram) |pair| {
         const addr = pair[0];

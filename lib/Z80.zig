@@ -111,6 +111,9 @@ imode: enum { mode0, mode1, mode2 },
 
 is_halted: bool,
 
+// cycles count
+cycles: u64,
+
 memRead: memReadFnPtr,
 memWrite: memWriteFnPtr,
 
@@ -167,6 +170,8 @@ pub fn reset(z: *Z80) void {
     z.imode = .mode0;
 
     z.is_halted = false;
+
+    z.cycles = 0;
 }
 
 pub fn step(z: *Z80) void {
@@ -288,7 +293,7 @@ fn parity(val: u8) bool {
     for (0..8) |i| {
         const bit: u3 = @intCast(i);
 
-        nb += (val >> bit) & 1;
+        nb +%= (val >> bit) & 1;
     }
 
     return nb % 2 == 0;
@@ -871,6 +876,8 @@ fn jr(z: *Z80, offset: u8, condition: bool) void {
     z.wz = z.pc +% offset_signed;
 
     z.pc +%= offset_signed;
+
+    z.cycles +%= 5;
 }
 
 fn djnz(z: *Z80, addr: u8) void {
@@ -888,6 +895,8 @@ fn call(z: *Z80, addr: u16, condition: bool) void {
 
     z.push(z.pc);
     z.pc = addr;
+
+    z.cycles +%= 7;
 }
 
 fn ret(z: *Z80, condition: bool) void {
@@ -896,6 +905,8 @@ fn ret(z: *Z80, condition: bool) void {
     z.wz = z.rw(z.sp);
 
     z.pc = z.pop();
+
+    z.cycles +%= 6;
 }
 
 fn rst(z: *Z80, addr: u8) void {
@@ -1020,6 +1031,8 @@ fn ldir(z: *Z80) void {
         z.q.set(z.f.getF());
 
         z.wz = z.pc +% 1;
+
+        z.cycles +%= 5;
     }
 }
 
@@ -1035,6 +1048,8 @@ fn lddr(z: *Z80) void {
         z.q.set(z.f.getF());
 
         z.wz = z.pc +% 1;
+
+        z.cycles +%= 5;
     }
 }
 
@@ -1082,6 +1097,8 @@ fn cpir(z: *Z80) void {
         z.q.set(z.f.getF());
 
         z.wz = z.pc +% 1;
+
+        z.cycles +%= 5;
     }
 }
 
@@ -1097,6 +1114,8 @@ fn cpdr(z: *Z80) void {
         z.q.set(z.f.getF());
 
         z.wz = z.pc +% 1;
+
+        z.cycles +%= 5;
     }
 }
 
@@ -1165,6 +1184,8 @@ fn inir(z: *Z80) void {
         }
 
         z.wz = z.pc +% 1;
+
+        z.cycles +%= 5;
     } else {
         z.f.x = false;
         z.f.y = false;
@@ -1196,6 +1217,8 @@ fn indr(z: *Z80) void {
         }
 
         z.wz = z.pc +% 1;
+
+        z.cycles +%= 5;
     } else {
         z.f.x = false;
         z.f.y = false;
@@ -1271,6 +1294,8 @@ fn otir(z: *Z80) void {
         }
 
         z.wz = z.pc +% 1;
+
+        z.cycles +%= 5;
     } else {
         z.f.x = false;
         z.f.y = false;
@@ -1302,6 +1327,8 @@ fn otdr(z: *Z80) void {
         }
 
         z.wz = z.pc +% 1;
+
+        z.cycles +%= 5;
     } else {
         z.f.x = false;
         z.f.y = false;
@@ -1314,6 +1341,7 @@ fn otdr(z: *Z80) void {
 
 fn exec_opcode(z: *Z80, opcode: u8) void {
     z.inc_r();
+    z.cycles +%= cycles_main[opcode];
 
     switch (opcode) {
         0x00 => {}, // nop
@@ -1696,6 +1724,7 @@ fn exec_opcode(z: *Z80, opcode: u8) void {
 
 fn exec_opcode_ed(z: *Z80, opcode: u8) void {
     z.inc_r();
+    z.cycles +%= cycles_misc[opcode];
 
     switch (opcode) {
         0x77, 0x7f => {}, // nop
@@ -1805,6 +1834,8 @@ fn exec_opcode_cb(z: *Z80, opcode: u8) void {
             2 => r.* = resetBit(_y, r.*),
             3 => r.* = setBit(_y, r.*),
         }
+
+        z.cycles +%= 8;
     } else {
         const hl = z.getHL();
         const val = z.rb(hl);
@@ -1827,15 +1858,20 @@ fn exec_opcode_cb(z: *Z80, opcode: u8) void {
                 z.f.y = getBit(13, z.wz) == 1;
 
                 z.q.set(z.f.getF());
+
+                z.cycles -%= 3;
             },
             2 => z.wb(hl, resetBit(_y, val)),
             3 => z.wb(hl, setBit(_y, val)),
         }
+
+        z.cycles +%= 15;
     }
 }
 
 fn exec_opcode_xy(z: *Z80, opcode: u8, xy_ptr: *u16) void {
     z.inc_r();
+    z.cycles +%= cycles_xy[opcode];
 
     var xy: struct {
         ptr: *u16,
@@ -2054,6 +2090,8 @@ fn exec_opcode_xy_cb(z: *Z80, opcode: u8, addr: u16) void {
 
             z.q.set(z.f.getF());
 
+            z.cycles +%= 20;
+
             return;
         },
         2 => resetBit(_y, val),
@@ -2062,7 +2100,66 @@ fn exec_opcode_xy_cb(z: *Z80, opcode: u8, addr: u16) void {
 
     z.wb(addr, res);
 
+    z.cycles +%= 23;
+
     if (registers[_z]) |r| {
         r.* = res;
     }
 }
+
+const cycles_main: [256]u8 = .{
+    4, 10, 7,  6,  4,  4,  7,  4,  4, 11, 7,  6,  4,  4,  7, 4,
+    8, 10, 7,  6,  4,  4,  7,  4,  7, 11, 7,  6,  4,  4,  7, 4,
+    7, 10, 16, 6,  4,  4,  7,  4,  7, 11, 16, 6,  4,  4,  7, 4,
+    7, 10, 13, 6,  11, 11, 10, 4,  7, 11, 13, 6,  4,  4,  7, 4,
+    4, 4,  4,  4,  4,  4,  7,  4,  4, 4,  4,  4,  4,  4,  7, 4,
+    4, 4,  4,  4,  4,  4,  7,  4,  4, 4,  4,  4,  4,  4,  7, 4,
+    4, 4,  4,  4,  4,  4,  7,  4,  4, 4,  4,  4,  4,  4,  7, 4,
+    7, 7,  7,  7,  7,  7,  4,  7,  4, 4,  4,  4,  4,  4,  7, 4,
+    4, 4,  4,  4,  4,  4,  7,  4,  4, 4,  4,  4,  4,  4,  7, 4,
+    4, 4,  4,  4,  4,  4,  7,  4,  4, 4,  4,  4,  4,  4,  7, 4,
+    4, 4,  4,  4,  4,  4,  7,  4,  4, 4,  4,  4,  4,  4,  7, 4,
+    4, 4,  4,  4,  4,  4,  7,  4,  4, 4,  4,  4,  4,  4,  7, 4,
+    5, 10, 10, 10, 10, 11, 7,  11, 5, 4,  10, 0,  10, 10, 7, 11,
+    5, 10, 10, 11, 10, 11, 7,  11, 5, 4,  10, 11, 10, 0,  7, 11,
+    5, 10, 10, 19, 10, 11, 7,  11, 5, 4,  10, 4,  10, 0,  7, 11,
+    5, 10, 10, 4,  10, 11, 7,  11, 5, 6,  10, 4,  10, 0,  7, 11,
+};
+
+const cycles_misc: [256]u8 = .{
+    8,  8,  8,  8,  8, 8, 8, 8,  8,  8,  8,  8,  8, 8, 8, 8,
+    8,  8,  8,  8,  8, 8, 8, 8,  8,  8,  8,  8,  8, 8, 8, 8,
+    8,  8,  8,  8,  8, 8, 8, 8,  8,  8,  8,  8,  8, 8, 8, 8,
+    8,  8,  8,  8,  8, 8, 8, 8,  8,  8,  8,  8,  8, 8, 8, 8,
+    12, 12, 15, 20, 8, 8, 8, 9,  12, 12, 15, 20, 8, 8, 8, 9,
+    12, 12, 15, 20, 8, 8, 8, 9,  12, 12, 15, 20, 8, 8, 8, 9,
+    12, 12, 15, 20, 8, 8, 8, 18, 12, 12, 15, 20, 8, 8, 8, 18,
+    12, 12, 15, 20, 8, 8, 8, 8,  12, 12, 15, 20, 8, 8, 8, 8,
+    8,  8,  8,  8,  8, 8, 8, 8,  8,  8,  8,  8,  8, 8, 8, 8,
+    8,  8,  8,  8,  8, 8, 8, 8,  8,  8,  8,  8,  8, 8, 8, 8,
+    16, 16, 16, 16, 8, 8, 8, 8,  16, 16, 16, 16, 8, 8, 8, 8,
+    16, 16, 16, 16, 8, 8, 8, 8,  16, 16, 16, 16, 8, 8, 8, 8,
+    8,  8,  8,  8,  8, 8, 8, 8,  8,  8,  8,  8,  8, 8, 8, 8,
+    8,  8,  8,  8,  8, 8, 8, 8,  8,  8,  8,  8,  8, 8, 8, 8,
+    8,  8,  8,  8,  8, 8, 8, 8,  8,  8,  8,  8,  8, 8, 8, 8,
+    8,  8,  8,  8,  8, 8, 8, 8,  8,  8,  8,  8,  8, 8, 8, 8,
+};
+
+const cycles_xy: [256]u8 = .{
+    4,  4,  4,  4,  4,  4,  4,  4,  4, 15, 4,  4,  4, 4, 4,  4,
+    4,  4,  4,  4,  4,  4,  4,  4,  4, 15, 4,  4,  4, 4, 4,  4,
+    4,  14, 20, 10, 8,  8,  11, 4,  4, 15, 20, 10, 8, 8, 11, 4,
+    4,  4,  4,  4,  23, 23, 19, 4,  4, 15, 4,  4,  4, 4, 4,  4,
+    4,  4,  4,  4,  8,  8,  19, 4,  4, 4,  4,  4,  8, 8, 19, 4,
+    4,  4,  4,  4,  8,  8,  19, 4,  4, 4,  4,  4,  8, 8, 19, 4,
+    8,  8,  8,  8,  8,  8,  19, 8,  8, 8,  8,  8,  8, 8, 19, 8,
+    19, 19, 19, 19, 19, 19, 4,  19, 4, 4,  4,  4,  8, 8, 19, 4,
+    4,  4,  4,  4,  8,  8,  19, 4,  4, 4,  4,  4,  8, 8, 19, 4,
+    4,  4,  4,  4,  8,  8,  19, 4,  4, 4,  4,  4,  8, 8, 19, 4,
+    4,  4,  4,  4,  8,  8,  19, 4,  4, 4,  4,  4,  8, 8, 19, 4,
+    4,  4,  4,  4,  8,  8,  19, 4,  4, 4,  4,  4,  8, 8, 19, 4,
+    4,  4,  4,  4,  4,  4,  4,  4,  4, 4,  4,  0,  4, 4, 4,  4,
+    4,  4,  4,  4,  4,  4,  4,  4,  4, 4,  4,  4,  4, 4, 4,  4,
+    4,  14, 4,  23, 4,  15, 4,  4,  4, 8,  4,  4,  4, 4, 4,  4,
+    4,  4,  4,  4,  4,  4,  4,  4,  4, 10, 4,  4,  4, 4, 4,  4,
+};
