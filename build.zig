@@ -80,19 +80,44 @@ pub fn build(b: *std.Build) void {
     }
 
     // "check" step used by ZLS for Build-On-Save.
-    const exe_check = b.addExecutable(.{
-        .name = "check",
+    const check = b.step("check", "Check if all code compile");
+
+    const exe_check_sst = b.addExecutable(.{
+        .name = "check_sst",
         .root_module = b.createModule(.{
             .root_source_file = b.path("tests/sst.zig"),
-
             .target = target,
             .optimize = optimize,
-
             .imports = &.{
                 .{ .name = "zig80", .module = mod_zig80 },
             },
         }),
     });
-    const check = b.step("check", "Check if zig80 compiles");
-    check.dependOn(&exe_check.step);
+    check.dependOn(&exe_check_sst.step);
+
+    const exe_check_zex = b.addExecutable(.{
+        .name = "check_zex",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tests/zex.zig"),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{
+                .{ .name = "zig80", .module = mod_zig80 },
+            },
+        }),
+    });
+    check.dependOn(&exe_check_zex.step);
+
+    const exe_check_z80test = b.addExecutable(.{
+        .name = "check_z80test",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tests/z80test.zig"),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{
+                .{ .name = "zig80", .module = mod_zig80 },
+            },
+        }),
+    });
+    check.dependOn(&exe_check_z80test.step);
 }
