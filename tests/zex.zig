@@ -108,7 +108,7 @@ fn runTest(allocaor: Allocator, rom_name: []const u8) !void {
 
     test_finished = false;
     while (!test_finished) {
-        try z.step();
+        z.step();
     }
 
     try stdout.print("\n", .{});
