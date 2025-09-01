@@ -20,7 +20,7 @@ var z: Z80 = .init(.{
 });
 var memory: [65536]u8 = @splat(0);
 
-var test_finished: bool = undefined;
+const rom_extention = ".com";
 
 var stdout_buffer: [1024]u8 = undefined;
 var stdout_writer = std.fs.File.stdout().writer(&stdout_buffer);
@@ -37,36 +37,13 @@ fn memWrite(addr: u16, val: u8) void {
 }
 
 fn ioRead(_: u16) u8 {
-    switch (z.c) {
-        2 => stdout.print("{c}", .{z.e}) catch {},
-        9 => {
-            var addr: u16 = (@as(u16, z.d) << 8) | z.e;
-
-            while (true) : (addr +%= 1) {
-                const char = memory[addr];
-
-                if (char == '$') {
-                    break;
-                }
-
-                stdout.print("{c}", .{char}) catch {};
-            }
-        },
-        else => @panic("Unknown syscal"),
-    }
-
-    stdout.flush() catch {};
-
     return 0xff;
 }
 
-fn ioWrite(_: u16, _: u8) void {
-    test_finished = true;
-}
+fn ioWrite(_: u16, _: u8) void {}
 
 fn loadRom(allocator: Allocator, rom_name: []const u8) !void {
     const base_path = "./tests/roms/";
-    const rom_extention = ".com";
 
     const rom_path = try std.mem.concat(allocator, u8, &[_][]const u8{
         base_path,
@@ -88,14 +65,8 @@ fn loadRom(allocator: Allocator, rom_name: []const u8) !void {
     @memset(memory[0..], 0);
     @memcpy(memory[start_addr .. rom_data.len + start_addr], rom_data);
 
-    // inject "out 1,a" at 0x0000 (signal to stop the test)
-    memory[0x0000] = 0xD3;
-    memory[0x0001] = 0x00;
-
-    // inject "in a,0" at 0x0005 (signal to output characters)
-    memory[0x0005] = 0xDB;
-    memory[0x0006] = 0x00;
-    memory[0x0007] = 0xC9;
+    memory[0x0000] = 0x76; // halt, and of tests
+    memory[0x0005] = 0xC9; // ret, after print
 }
 
 fn runTest(allocaor: Allocator, rom_name: []const u8) !void {
@@ -104,14 +75,47 @@ fn runTest(allocaor: Allocator, rom_name: []const u8) !void {
 
     try loadRom(allocaor, rom_name);
 
-    log.info("Running {s}.com\n", .{rom_name});
+    log.info("Running {s}{s}\n", .{ rom_name, rom_extention });
 
-    test_finished = false;
-    while (!test_finished) {
+    var timer: std.time.Timer = try .start();
+
+    while (!z.is_halted) {
         z.step();
+
+        if (z.pc == 0x0005) {
+            switch (z.c) {
+                2 => stdout.print("{c}", .{z.e}) catch {},
+                9 => {
+                    var addr: u16 = (@as(u16, z.d) << 8) | z.e;
+
+                    while (true) : (addr +%= 1) {
+                        const char = memory[addr];
+
+                        if (char == '$') {
+                            break;
+                        }
+
+                        stdout.print("{c}", .{char}) catch {};
+                    }
+                },
+                else => @panic("Unknown syscal"),
+            }
+
+            stdout.flush() catch {};
+        }
     }
 
-    try stdout.print("\n", .{});
+    const test_time: f128 = @as(f128, @floatFromInt(timer.read())) / 1_000_000_000.0;
+
+    try stdout.print("\n\n", .{});
+    try stdout.flush();
+
+    log.info("Test {s}{s} took {d} cycles, and ran in {:.2}s", .{ rom_name, rom_extention, z.cycles, test_time });
+    log.info("Test {s}{s} ran at {:.2} MHz", .{
+        rom_name,
+        rom_extention,
+        @as(f128, @floatFromInt(z.cycles)) / test_time / 1_000_000.0,
+    });
 }
 
 // ********** public functions ********** //
@@ -142,6 +146,4 @@ pub fn main() !void {
         try stdout.flush();
         try runTest(allocator, "zexall");
     }
-
-    try stdout.flush();
 }

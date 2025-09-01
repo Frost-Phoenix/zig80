@@ -20,7 +20,7 @@ var z: Z80 = .init(.{
 });
 var memory: [65536]u8 = @splat(0);
 
-var test_finished: bool = undefined;
+const rom_extention = ".tap";
 
 var stdout_buffer: [1024]u8 = undefined;
 var stdout_writer = std.fs.File.stdout().writer(&stdout_buffer);
@@ -44,7 +44,6 @@ fn ioWrite(_: u16, _: u8) void {}
 
 fn loadRom(allocator: Allocator, rom_name: []const u8) !void {
     const base_path = "./tests/roms/";
-    const rom_extention = ".tap";
 
     const rom_path = try std.mem.concat(allocator, u8, &[_][]const u8{
         base_path,
@@ -79,15 +78,12 @@ fn runTest(allocaor: Allocator, rom_name: []const u8) !void {
 
     try loadRom(allocaor, rom_name);
 
-    log.info("Running {s}.tap\n", .{rom_name});
+    log.info("Running {s}{s}\n", .{ rom_name, rom_extention });
 
-    test_finished = false;
-    while (!test_finished) {
+    var timer: std.time.Timer = try .start();
+
+    while (z.pc != 0x0000) {
         z.step();
-
-        if (z.is_halted or z.pc == 0x0000) {
-            break;
-        }
 
         if (z.pc == 0x0010) {
             var char: u8 = z.a;
@@ -102,7 +98,17 @@ fn runTest(allocaor: Allocator, rom_name: []const u8) !void {
         }
     }
 
+    const test_time: f128 = @as(f128, @floatFromInt(timer.read())) / 1_000_000_000.0;
+
     try stdout.print("\n", .{});
+    try stdout.flush();
+
+    log.info("Test {s}{s} took {d} cycles, and ran in {:.2}s", .{ rom_name, rom_extention, z.cycles, test_time });
+    log.info("Test {s}{s} ran at {:.2} MHz", .{
+        rom_name,
+        rom_extention,
+        @as(f128, @floatFromInt(z.cycles)) / test_time / 1_000_000.0,
+    });
 }
 
 // ********** public functions ********** //
@@ -145,6 +151,4 @@ pub fn main() !void {
         try stdout.flush();
         try runTest(allocator, "z80memptr");
     }
-
-    try stdout.flush();
 }
