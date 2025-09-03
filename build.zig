@@ -24,12 +24,12 @@ pub fn build(b: *std.Build) void {
             },
         }),
     });
+    b.installArtifact(test_sst);
 
     const run_step_sst = b.step("test-sst", "Run Single Step Tests");
     const run_cmd_sst = b.addRunArtifact(test_sst);
 
     run_step_sst.dependOn(&run_cmd_sst.step);
-    run_cmd_sst.step.dependOn(b.getInstallStep());
 
     const test_zex = b.addExecutable(.{
         .name = "zig80_test_zex",
@@ -45,12 +45,12 @@ pub fn build(b: *std.Build) void {
             },
         }),
     });
+    b.installArtifact(test_zex);
 
     const run_step_zex = b.step("test-zex", "Run Single Step Tests");
     const run_cmd_zex = b.addRunArtifact(test_zex);
 
     run_step_zex.dependOn(&run_cmd_zex.step);
-    run_cmd_zex.step.dependOn(b.getInstallStep());
 
     const test_z80test = b.addExecutable(.{
         .name = "zig80_test_z80test",
@@ -66,12 +66,12 @@ pub fn build(b: *std.Build) void {
             },
         }),
     });
+    b.installArtifact(test_z80test);
 
     const run_step_z80test = b.step("test-z80test", "Run Single Step Tests");
     const run_cmd_z80test = b.addRunArtifact(test_z80test);
 
     run_step_z80test.dependOn(&run_cmd_z80test.step);
-    run_cmd_z80test.step.dependOn(b.getInstallStep());
 
     if (b.args) |args| {
         run_cmd_sst.addArgs(args);
