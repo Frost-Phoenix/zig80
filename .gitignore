@@ -12,3 +12,6 @@ tests/sst
 tests/roms
 
 ref
+
+perf*
+*.svg
