@@ -16,11 +16,11 @@ const Flags = packed struct(u8) {
     z: bool,
     s: bool,
 
-    pub fn getF(f: *Flags) u8 {
+    pub inline fn getF(f: *Flags) u8 {
         return @bitCast(f.*);
     }
 
-    pub fn setF(f: *Flags, val: u8) void {
+    pub inline fn setF(f: *Flags, val: u8) void {
         f.* = @bitCast(val);
     }
 };
@@ -85,12 +85,12 @@ q: struct {
 
     const Self = @This();
 
-    pub fn set(self: *Self, val: u8) void {
+    pub inline fn set(self: *Self, val: u8) void {
         self.val = val;
         self.changed = true;
     }
 
-    pub fn reset(self: *Self) void {
+    pub inline fn reset(self: *Self) void {
         self.val = 0;
     }
 },
@@ -192,67 +192,71 @@ pub fn step(z: *Z80) void {
 
 // ********** register helper functions ********** //
 
-fn getBC(z: *Z80) u16 {
+inline fn getBC(z: *Z80) u16 {
     return (@as(u16, z.b) << 8) | z.c;
 }
 
-fn setBC(z: *Z80, val: u16) void {
+inline fn setBC(z: *Z80, val: u16) void {
     z.b = @truncate(val >> 8);
     z.c = @truncate(val & 0xff);
 }
 
-fn getDE(z: *Z80) u16 {
+inline fn getDE(z: *Z80) u16 {
     return (@as(u16, z.d) << 8) | z.e;
 }
 
-fn setDE(z: *Z80, val: u16) void {
+inline fn setDE(z: *Z80, val: u16) void {
     z.d = @truncate(val >> 8);
     z.e = @truncate(val & 0xff);
 }
 
-fn getHL(z: *Z80) u16 {
+inline fn getHL(z: *Z80) u16 {
     return (@as(u16, z.h) << 8) | z.l;
 }
 
-fn setHL(z: *Z80, val: u16) void {
+inline fn setHL(z: *Z80, val: u16) void {
     z.h = @truncate(val >> 8);
     z.l = @truncate(val & 0xff);
 }
 
 // used for ldWordAddr
-fn setSP(z: *Z80, val: u16) void {
+inline fn setSP(z: *Z80, val: u16) void {
     z.sp = val;
 }
 
-fn getAF(z: *Z80) u16 {
+inline fn getAF(z: *Z80) u16 {
     return (@as(u16, z.a) << 8) | z.f.getF();
 }
 
-fn setAF(z: *Z80, val: u16) void {
+inline fn setAF(z: *Z80, val: u16) void {
     z.a = @truncate(val >> 8);
     z.f.setF(@truncate(val & 0xff));
 }
 
 // ********** helper functions ********** //
 
-fn rb(z: *Z80, addr: u16) u8 {
+inline fn rb(z: *Z80, addr: u16) u8 {
+    @setEvalBranchQuota(10000);
+
     return z.memRead(addr);
 }
 
-fn wb(z: *Z80, addr: u16, val: u8) void {
+inline fn wb(z: *Z80, addr: u16, val: u8) void {
+    @setEvalBranchQuota(10000);
+
     z.memWrite(addr, val);
 }
 
-fn rw(z: *Z80, addr: u16) u16 {
+inline fn rw(z: *Z80, addr: u16) u16 {
     return (@as(u16, z.rb(addr +% 1)) << 8) | z.rb(addr);
 }
 
-fn ww(z: *Z80, addr: u16, val: u16) void {
+inline fn ww(z: *Z80, addr: u16, val: u16) void {
     z.wb(addr +% 1, @truncate(val >> 8));
     z.wb(addr, @truncate(val & 0xff));
 }
 
-fn nextb(z: *Z80) u8 {
+inline fn nextb(z: *Z80) u8 {
     const val = z.rb(z.pc);
 
     z.pc +%= 1;
@@ -260,7 +264,7 @@ fn nextb(z: *Z80) u8 {
     return val;
 }
 
-fn nextw(z: *Z80) u16 {
+inline fn nextw(z: *Z80) u16 {
     const val = z.rw(z.pc);
 
     z.pc +%= 2;
@@ -268,26 +272,26 @@ fn nextw(z: *Z80) u16 {
     return val;
 }
 
-fn getBit(n: u5, val: u32) u1 {
+inline fn getBit(n: u5, val: u32) u1 {
     return @truncate((val >> n) & 1);
 }
 
-fn setBit(bit: u3, val: u8) u8 {
+inline fn setBit(bit: u3, val: u8) u8 {
     return val | (@as(u8, 1) << bit);
 }
 
-fn resetBit(bit: u3, val: u8) u8 {
+inline fn resetBit(bit: u3, val: u8) u8 {
     return val & ~(@as(u8, 1) << bit);
 }
 
-fn carry(bit: u5, a: u16, b: u16, cf: u1) bool {
+inline fn carry(bit: u5, a: u16, b: u16, cf: u1) bool {
     const res: u32 = @as(u32, a) + @as(u32, b) + cf;
     const c: u32 = res ^ a ^ b;
 
     return getBit(bit, c) == 1;
 }
 
-fn parity(val: u8) bool {
+inline fn parity(val: u8) bool {
     var nb: u8 = 0;
 
     for (0..8) |i| {
@@ -299,7 +303,7 @@ fn parity(val: u8) bool {
     return nb % 2 == 0;
 }
 
-fn swap(a: *u16, b: *u16) void {
+inline fn swap(a: *u16, b: *u16) void {
     const tmp = a.*;
 
     a.* = b.*;
@@ -308,7 +312,7 @@ fn swap(a: *u16, b: *u16) void {
 
 // ********** private functions ********** //
 
-fn ldAAddr(z: *Z80, addr: u16) void {
+inline fn ldAAddr(z: *Z80, addr: u16) void {
     const val = z.rb(addr);
 
     z.a = val;
@@ -316,13 +320,13 @@ fn ldAAddr(z: *Z80, addr: u16) void {
     z.wz = addr +% 1;
 }
 
-fn ldAddrA(z: *Z80, addr: u16) void {
+inline fn ldAddrA(z: *Z80, addr: u16) void {
     z.wb(addr, z.a);
 
     z.wz = (@as(u16, z.a) << 8) | ((addr +% 1) & 0xff);
 }
 
-fn ldWordAddr(z: *Z80, setReg: fn (*Z80, u16) void, addr: u16) void {
+inline fn ldWordAddr(z: *Z80, setReg: fn (*Z80, u16) callconv(.@"inline") void, addr: u16) void {
     const val = z.rw(addr);
 
     setReg(z, val);
@@ -330,21 +334,21 @@ fn ldWordAddr(z: *Z80, setReg: fn (*Z80, u16) void, addr: u16) void {
     z.wz = addr +% 1;
 }
 
-fn ldAddrWord(z: *Z80, addr: u16, val: u16) void {
+inline fn ldAddrWord(z: *Z80, addr: u16, val: u16) void {
     z.ww(addr, val);
 
     z.wz = addr +% 1;
 }
 
-fn inc_r(z: *Z80) void {
+inline fn inc_r(z: *Z80) void {
     z.r = (z.r & 0x80) | ((z.r +% 1) & 0x7f);
 }
 
-fn dec_r(z: *Z80) void {
+inline fn dec_r(z: *Z80) void {
     z.r = (z.r & 0x80) | ((z.r -% 1) & 0x7f);
 }
 
-fn inc(z: *Z80, val: u8) u8 {
+inline fn inc(z: *Z80, val: u8) u8 {
     const res = val +% 1;
 
     z.f.n = false;
@@ -360,7 +364,7 @@ fn inc(z: *Z80, val: u8) u8 {
     return res;
 }
 
-fn add(z: *Z80, a: u8, b: u8) u8 {
+inline fn add(z: *Z80, a: u8, b: u8) u8 {
     const res = a +% b;
 
     z.f.c = carry(8, a, b, 0);
@@ -377,7 +381,7 @@ fn add(z: *Z80, a: u8, b: u8) u8 {
     return res;
 }
 
-fn adc(z: *Z80, a: u8, b: u8) u8 {
+inline fn adc(z: *Z80, a: u8, b: u8) u8 {
     const carry_in = @intFromBool(z.f.c);
     const res = a +% b +% carry_in;
 
@@ -395,7 +399,7 @@ fn adc(z: *Z80, a: u8, b: u8) u8 {
     return res;
 }
 
-fn addw(z: *Z80, a: u16, b: u16) u16 {
+inline fn addw(z: *Z80, a: u16, b: u16) u16 {
     const res = a +% b;
 
     z.f.c = carry(16, a, b, 0);
@@ -411,7 +415,7 @@ fn addw(z: *Z80, a: u16, b: u16) u16 {
     return res;
 }
 
-fn adcw(z: *Z80, a: u16, b: u16) u16 {
+inline fn adcw(z: *Z80, a: u16, b: u16) u16 {
     const carry_in = @intFromBool(z.f.c);
     const res = a +% b +% carry_in;
 
@@ -431,7 +435,7 @@ fn adcw(z: *Z80, a: u16, b: u16) u16 {
     return res;
 }
 
-fn dec(z: *Z80, val: u8) u8 {
+inline fn dec(z: *Z80, val: u8) u8 {
     const res = val -% 1;
 
     z.f.n = true;
@@ -447,7 +451,7 @@ fn dec(z: *Z80, val: u8) u8 {
     return res;
 }
 
-fn sub(z: *Z80, a: u8, b: u8) u8 {
+inline fn sub(z: *Z80, a: u8, b: u8) u8 {
     const res = a -% b;
 
     z.f.c = a < b;
@@ -464,7 +468,7 @@ fn sub(z: *Z80, a: u8, b: u8) u8 {
     return res;
 }
 
-fn sbc(z: *Z80, a: u8, b: u8) u8 {
+inline fn sbc(z: *Z80, a: u8, b: u8) u8 {
     const carry_in = @intFromBool(z.f.c);
     const res = a -% b -% carry_in;
 
@@ -482,7 +486,7 @@ fn sbc(z: *Z80, a: u8, b: u8) u8 {
     return res;
 }
 
-fn sbcw(z: *Z80, a: u16, b: u16) u16 {
+inline fn sbcw(z: *Z80, a: u16, b: u16) u16 {
     const carry_in = @intFromBool(z.f.c);
     const res = a -% b -% carry_in;
 
@@ -540,7 +544,7 @@ fn sbcw(z: *Z80, a: u16, b: u16) u16 {
 /// | 1  | 1  |    0-5     |  1  |
 ///
 /// (from: http://www.z80.info/zip/z80-documented.pdf)
-fn daa(z: *Z80) u8 {
+inline fn daa(z: *Z80) u8 {
     var diff: u8 = 0;
 
     const n_h: u4 = @truncate(z.a >> 4); // nibble high
@@ -595,7 +599,7 @@ fn daa(z: *Z80) u8 {
     return res;
 }
 
-fn land(z: *Z80, val: u8) u8 {
+inline fn land(z: *Z80, val: u8) u8 {
     const res = z.a & val;
 
     z.f.c = false;
@@ -612,7 +616,7 @@ fn land(z: *Z80, val: u8) u8 {
     return res;
 }
 
-fn lxor(z: *Z80, val: u8) u8 {
+inline fn lxor(z: *Z80, val: u8) u8 {
     const res = z.a ^ val;
 
     z.f.c = false;
@@ -629,7 +633,7 @@ fn lxor(z: *Z80, val: u8) u8 {
     return res;
 }
 
-fn lor(z: *Z80, val: u8) u8 {
+inline fn lor(z: *Z80, val: u8) u8 {
     const res = z.a | val;
 
     z.f.c = false;
@@ -646,7 +650,7 @@ fn lor(z: *Z80, val: u8) u8 {
     return res;
 }
 
-fn scf(z: *Z80) void {
+inline fn scf(z: *Z80) void {
     z.f.c = true;
     z.f.n = false;
     z.f.h = false;
@@ -662,7 +666,7 @@ fn scf(z: *Z80) void {
     z.q.set(z.f.getF());
 }
 
-fn ccf(z: *Z80) void {
+inline fn ccf(z: *Z80) void {
     const old_cf = z.f.c;
 
     z.f.c = !z.f.c;
@@ -680,7 +684,7 @@ fn ccf(z: *Z80) void {
     z.q.set(z.f.getF());
 }
 
-fn cpl(z: *Z80) void {
+inline fn cpl(z: *Z80) void {
     z.a = ~z.a;
 
     z.f.n = true;
@@ -691,7 +695,7 @@ fn cpl(z: *Z80) void {
     z.q.set(z.f.getF());
 }
 
-fn rotate(z: *Z80, val: u8, dir: RotateDir, loop: bool) u8 {
+inline fn rotate(z: *Z80, val: u8, dir: RotateDir, loop: bool) u8 {
     var res: u8 = switch (dir) {
         .left => val << 1,
         .right => val >> 1,
@@ -722,7 +726,7 @@ fn rotate(z: *Z80, val: u8, dir: RotateDir, loop: bool) u8 {
     return res;
 }
 
-fn rotateA(z: *Z80, dir: RotateDir, loop: bool) u8 {
+inline fn rotateA(z: *Z80, dir: RotateDir, loop: bool) u8 {
     const old_f = z.f;
 
     const res = z.rotate(z.a, dir, loop);
@@ -736,7 +740,7 @@ fn rotateA(z: *Z80, dir: RotateDir, loop: bool) u8 {
     return res;
 }
 
-fn shift(z: *Z80, val: u8, dir: ShiftDir, fill: bool) u8 {
+inline fn shift(z: *Z80, val: u8, dir: ShiftDir, fill: bool) u8 {
     var res: u8 = switch (dir) {
         .left => val << 1,
         .right => val >> 1,
@@ -766,7 +770,7 @@ fn shift(z: *Z80, val: u8, dir: ShiftDir, fill: bool) u8 {
     return res;
 }
 
-fn rrd(z: *Z80) void {
+inline fn rrd(z: *Z80) void {
     const val = z.rb(z.getHL());
     var res: u8 = 0;
 
@@ -793,7 +797,7 @@ fn rrd(z: *Z80) void {
     z.wz = z.getHL() +% 1;
 }
 
-fn rld(z: *Z80) void {
+inline fn rld(z: *Z80) void {
     const val = z.rb(z.getHL());
     var res: u8 = 0;
 
@@ -820,7 +824,7 @@ fn rld(z: *Z80) void {
     z.wz = z.getHL() +% 1;
 }
 
-fn bit_test(z: *Z80, bit: u3, val: u8) void {
+inline fn bit_test(z: *Z80, bit: u3, val: u8) void {
     z.f.n = false;
     z.f.pv = getBit(bit, val) == 0;
     z.f.x = getBit(3, val) == 1;
@@ -832,7 +836,7 @@ fn bit_test(z: *Z80, bit: u3, val: u8) void {
     z.q.set(z.f.getF());
 }
 
-fn cp(z: *Z80, val: u8) void {
+inline fn cp(z: *Z80, val: u8) void {
     const res = z.a -% val;
 
     z.f.c = z.a < val;
@@ -847,12 +851,12 @@ fn cp(z: *Z80, val: u8) void {
     z.q.set(z.f.getF());
 }
 
-fn push(z: *Z80, val: u16) void {
+inline fn push(z: *Z80, val: u16) void {
     z.sp -%= 2;
     z.ww(z.sp, val);
 }
 
-fn pop(z: *Z80) u16 {
+inline fn pop(z: *Z80) u16 {
     const res = z.rw(z.sp);
 
     z.sp +%= 2;
@@ -860,7 +864,7 @@ fn pop(z: *Z80) u16 {
     return res;
 }
 
-fn jump(z: *Z80, addr: u16, condition: bool) void {
+inline fn jump(z: *Z80, addr: u16, condition: bool) void {
     z.wz = addr;
 
     if (!condition) return;
@@ -868,7 +872,7 @@ fn jump(z: *Z80, addr: u16, condition: bool) void {
     z.pc = addr;
 }
 
-fn jr(z: *Z80, offset: u8, condition: bool) void {
+inline fn jr(z: *Z80, offset: u8, condition: bool) void {
     if (!condition) return;
 
     const offset_signed: u16 = @bitCast(@as(i16, @as(i8, @bitCast(offset))));
@@ -880,7 +884,7 @@ fn jr(z: *Z80, offset: u8, condition: bool) void {
     z.cycles +%= 5;
 }
 
-fn djnz(z: *Z80, addr: u8) void {
+inline fn djnz(z: *Z80, addr: u8) void {
     z.b -%= 1;
 
     if (z.b != 0) {
@@ -888,7 +892,7 @@ fn djnz(z: *Z80, addr: u8) void {
     }
 }
 
-fn call(z: *Z80, addr: u16, condition: bool) void {
+inline fn call(z: *Z80, addr: u16, condition: bool) void {
     z.wz = addr;
 
     if (!condition) return;
@@ -899,7 +903,7 @@ fn call(z: *Z80, addr: u16, condition: bool) void {
     z.cycles +%= 7;
 }
 
-fn ret(z: *Z80, condition: bool) void {
+inline fn ret(z: *Z80, condition: bool) void {
     if (!condition) return;
 
     z.wz = z.rw(z.sp);
@@ -909,7 +913,7 @@ fn ret(z: *Z80, condition: bool) void {
     z.cycles +%= 6;
 }
 
-fn rst(z: *Z80, addr: u8) void {
+inline fn rst(z: *Z80, addr: u8) void {
     z.push(z.pc);
 
     z.pc = @intCast(addr);
@@ -917,23 +921,23 @@ fn rst(z: *Z80, addr: u8) void {
     z.wz = z.pc;
 }
 
-fn di(z: *Z80) void {
+inline fn di(z: *Z80) void {
     z.iff1 = false;
     z.iff2 = false;
 }
 
-fn ei(z: *Z80) void {
+inline fn ei(z: *Z80) void {
     z.iff1 = true;
     z.iff2 = true;
 }
 
-fn retn(z: *Z80) void {
+inline fn retn(z: *Z80) void {
     z.iff1 = z.iff2;
 
     z.ret(true);
 }
 
-fn out(z: *Z80, high_byte: u8, port: u8, val: u8) void {
+inline fn out(z: *Z80, high_byte: u8, port: u8, val: u8) void {
     const addr = (@as(u16, high_byte) << 8) | port;
 
     z.ioWrite(addr, val);
@@ -941,7 +945,7 @@ fn out(z: *Z80, high_byte: u8, port: u8, val: u8) void {
     z.wz = z.getBC() +% 1;
 }
 
-fn in(z: *Z80, high_byte: u8, port: u8, update_flags: bool) u8 {
+inline fn in(z: *Z80, high_byte: u8, port: u8, update_flags: bool) u8 {
     const addr = (@as(u16, high_byte) << 8) | port;
     const res = z.ioRead(addr);
 
@@ -962,7 +966,7 @@ fn in(z: *Z80, high_byte: u8, port: u8, update_flags: bool) u8 {
     return res;
 }
 
-fn ld_a_i(z: *Z80) void {
+inline fn ld_a_i(z: *Z80) void {
     z.a = z.i;
 
     z.f.n = false;
@@ -976,7 +980,7 @@ fn ld_a_i(z: *Z80) void {
     z.q.set(z.f.getF());
 }
 
-fn ld_a_r(z: *Z80) void {
+inline fn ld_a_r(z: *Z80) void {
     z.a = z.r;
 
     z.f.n = false;
@@ -990,7 +994,7 @@ fn ld_a_r(z: *Z80) void {
     z.q.set(z.f.getF());
 }
 
-fn ldi(z: *Z80) void {
+inline fn ldi(z: *Z80) void {
     const bc = z.getBC();
     const de = z.getDE();
     const hl = z.getHL();
@@ -1012,14 +1016,14 @@ fn ldi(z: *Z80) void {
     z.q.set(z.f.getF());
 }
 
-fn ldd(z: *Z80) void {
+inline fn ldd(z: *Z80) void {
     z.ldi();
 
     z.setDE(z.getDE() -% 2);
     z.setHL(z.getHL() -% 2);
 }
 
-fn ldir(z: *Z80) void {
+inline fn ldir(z: *Z80) void {
     z.ldi();
 
     if (z.getBC() != 0) {
@@ -1036,7 +1040,7 @@ fn ldir(z: *Z80) void {
     }
 }
 
-fn lddr(z: *Z80) void {
+inline fn lddr(z: *Z80) void {
     z.ldd();
 
     if (z.getBC() != 0) {
@@ -1053,7 +1057,7 @@ fn lddr(z: *Z80) void {
     }
 }
 
-fn cpi(z: *Z80) void {
+inline fn cpi(z: *Z80) void {
     const bc = z.getBC();
     const hl = z.getHL();
 
@@ -1077,7 +1081,7 @@ fn cpi(z: *Z80) void {
     z.wz +%= 1;
 }
 
-fn cpd(z: *Z80) void {
+inline fn cpd(z: *Z80) void {
     z.cpi();
 
     z.setHL(z.getHL() -% 2);
@@ -1085,7 +1089,7 @@ fn cpd(z: *Z80) void {
     z.wz -%= 2;
 }
 
-fn cpir(z: *Z80) void {
+inline fn cpir(z: *Z80) void {
     z.cpi();
 
     if (z.getBC() != 0 and z.f.z == false) {
@@ -1102,7 +1106,7 @@ fn cpir(z: *Z80) void {
     }
 }
 
-fn cpdr(z: *Z80) void {
+inline fn cpdr(z: *Z80) void {
     z.cpd();
 
     if (z.getBC() != 0 and z.f.z == false) {
@@ -1119,7 +1123,7 @@ fn cpdr(z: *Z80) void {
     }
 }
 
-fn ini(z: *Z80) void {
+inline fn ini(z: *Z80) void {
     const hl = z.getHL();
     const val = z.in(z.b, z.c, false);
 
@@ -1141,7 +1145,7 @@ fn ini(z: *Z80) void {
     z.q.set(z.f.getF());
 }
 
-fn ind(z: *Z80) void {
+inline fn ind(z: *Z80) void {
     const hl = z.getHL();
     const val = z.in(z.b, z.c, false);
 
@@ -1163,7 +1167,7 @@ fn ind(z: *Z80) void {
     z.q.set(z.f.getF());
 }
 
-fn inir(z: *Z80) void {
+inline fn inir(z: *Z80) void {
     z.ini();
 
     if (z.b != 0) {
@@ -1196,7 +1200,7 @@ fn inir(z: *Z80) void {
     z.q.set(z.f.getF());
 }
 
-fn indr(z: *Z80) void {
+inline fn indr(z: *Z80) void {
     z.ind();
 
     if (z.b != 0) {
@@ -1229,7 +1233,7 @@ fn indr(z: *Z80) void {
     z.q.set(z.f.getF());
 }
 
-fn outi(z: *Z80) void {
+inline fn outi(z: *Z80) void {
     const hl = z.getHL();
     const val = z.rb(hl);
 
@@ -1251,7 +1255,7 @@ fn outi(z: *Z80) void {
     z.wz = z.getBC() +% 1;
 }
 
-fn outd(z: *Z80) void {
+inline fn outd(z: *Z80) void {
     const hl = z.getHL();
     const val = z.rb(hl);
 
@@ -1273,7 +1277,7 @@ fn outd(z: *Z80) void {
     z.wz = z.getBC() -% 1;
 }
 
-fn otir(z: *Z80) void {
+inline fn otir(z: *Z80) void {
     z.outi();
 
     if (z.b != 0) {
@@ -1306,7 +1310,7 @@ fn otir(z: *Z80) void {
     z.q.set(z.f.getF());
 }
 
-fn otdr(z: *Z80) void {
+inline fn otdr(z: *Z80) void {
     z.outd();
 
     if (z.b != 0) {
@@ -1722,7 +1726,7 @@ fn exec_opcode(z: *Z80, opcode: u8) void {
     }
 }
 
-fn exec_opcode_ed(z: *Z80, opcode: u8) void {
+inline fn exec_opcode_ed(z: *Z80, opcode: u8) void {
     z.inc_r();
     z.cycles +%= cycles_misc[opcode];
 
@@ -1809,7 +1813,7 @@ fn exec_opcode_ed(z: *Z80, opcode: u8) void {
     }
 }
 
-fn exec_opcode_cb(z: *Z80, opcode: u8) void {
+inline fn exec_opcode_cb(z: *Z80, opcode: u8) void {
     z.inc_r();
 
     const registers: [8]?*u8 = .{ &z.b, &z.c, &z.d, &z.e, &z.h, &z.l, null, &z.a };
@@ -1869,7 +1873,7 @@ fn exec_opcode_cb(z: *Z80, opcode: u8) void {
     }
 }
 
-fn exec_opcode_xy(z: *Z80, opcode: u8, xy_ptr: *u16) void {
+inline fn exec_opcode_xy(z: *Z80, opcode: u8, xy_ptr: *u16) void {
     z.inc_r();
     z.cycles +%= cycles_xy[opcode];
 
@@ -1878,27 +1882,27 @@ fn exec_opcode_xy(z: *Z80, opcode: u8, xy_ptr: *u16) void {
 
         const Self = @This();
 
-        fn getDisplacement(z_: *Z80) u16 {
+        inline fn getDisplacement(z_: *Z80) u16 {
             return @bitCast(@as(i16, @as(i8, @bitCast(z_.nextb()))));
         }
 
-        pub fn getLow(self: *Self) u8 {
+        pub inline fn getLow(self: *Self) u8 {
             return @truncate(self.ptr.* & 0xff);
         }
 
-        pub fn getHigh(self: *Self) u8 {
+        pub inline fn getHigh(self: *Self) u8 {
             return @truncate(self.ptr.* >> 8);
         }
 
-        pub fn setLow(self: *Self, val: u8) void {
+        pub inline fn setLow(self: *Self, val: u8) void {
             self.ptr.* = (self.ptr.* & 0xff00) | val;
         }
 
-        pub fn setHigh(self: *Self, val: u8) void {
+        pub inline fn setHigh(self: *Self, val: u8) void {
             self.ptr.* = (@as(u16, val) << 8) | (self.ptr.* & 0xff);
         }
 
-        pub fn getAddr(self: *Self, z_: *Z80) u16 {
+        pub inline fn getAddr(self: *Self, z_: *Z80) u16 {
             const res = self.ptr.* +% getDisplacement(z_);
 
             z_.wz = res;
@@ -2062,7 +2066,7 @@ fn exec_opcode_xy(z: *Z80, opcode: u8, xy_ptr: *u16) void {
     }
 }
 
-fn exec_opcode_xy_cb(z: *Z80, opcode: u8, addr: u16) void {
+inline fn exec_opcode_xy_cb(z: *Z80, opcode: u8, addr: u16) void {
     const registers: [8]?*u8 = .{ &z.b, &z.c, &z.d, &z.e, &z.h, &z.l, null, &z.a };
 
     const _x: u2 = @truncate(opcode >> 6);
