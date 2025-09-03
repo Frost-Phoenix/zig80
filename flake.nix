@@ -95,12 +95,18 @@
         devShells.default = env.mkShell {
           # Packages required for compiling, linking and running
           # Libraries added here will be automatically added to the LD_LIBRARY_PATH and PKG_CONFIG_PATH
-          nativeBuildInputs = [
-            zlsPkg
-            zigimportsPkg
-          ]
-          ++ nativeBuildInputs
-          ++ buildInputs;
+          nativeBuildInputs =
+            with env.pkgs;
+            [
+              zlsPkg
+              zigimportsPkg
+
+              ## Profiling tools
+              linuxPackages.perf
+              flamegraph
+            ]
+            ++ nativeBuildInputs
+            ++ buildInputs;
         };
       }
     ));
