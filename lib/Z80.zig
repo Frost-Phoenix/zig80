@@ -174,14 +174,14 @@ pub fn reset(z: *Z80) void {
     z.cycles = 0;
 }
 
-pub fn step(z: *Z80) void {
+pub inline fn step(z: *Z80) void {
     if (z.is_halted) {
         return;
     }
 
     const opcode = z.nextb();
 
-    z.exec_opcode(opcode);
+    @call(.always_inline, exec_opcode, .{ z, opcode });
 
     if (!z.q.changed) {
         z.q.reset();
