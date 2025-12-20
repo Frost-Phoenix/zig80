@@ -102,7 +102,7 @@
               zigimportsPkg
 
               ## Profiling tools
-              linuxPackages.perf
+              perf
               flamegraph
             ]
             ++ nativeBuildInputs
