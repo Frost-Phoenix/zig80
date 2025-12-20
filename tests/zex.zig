@@ -78,9 +78,12 @@ fn runTest(allocaor: Allocator, rom_name: []const u8) !void {
     log.info("Running {s}{s}\n", .{ rom_name, rom_extention });
 
     var timer: std.time.Timer = try .start();
+    var nb_instructions: u64 = 0;
 
     while (!z.is_halted) {
         z.step();
+
+        nb_instructions += 1;
 
         if (z.pc == 0x0005) {
             switch (z.c) {
@@ -111,10 +114,11 @@ fn runTest(allocaor: Allocator, rom_name: []const u8) !void {
     try stdout.flush();
 
     log.info("Test {s}{s} took {d} cycles, and ran in {:.2}s", .{ rom_name, rom_extention, z.cycles, test_time });
-    log.info("Test {s}{s} ran at {:.2} MHz", .{
+    log.info("Test {s}{s} ran at {:.2} MHz ({:.2} MIPS)", .{
         rom_name,
         rom_extention,
         @as(f128, @floatFromInt(z.cycles)) / test_time / 1_000_000.0,
+        @as(f128, @floatFromInt(nb_instructions)) / test_time / 1_000_000.0,
     });
 }
 
