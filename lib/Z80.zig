@@ -25,6 +25,22 @@ const Flags = packed struct(u8) {
     }
 };
 
+const Q = struct {
+    val: u8,
+    changed: bool,
+
+    const Self = @This();
+
+    pub inline fn set(self: *Self, val: u8) void {
+        self.val = val;
+        self.changed = true;
+    }
+
+    pub inline fn reset(self: *Self) void {
+        self.val = 0;
+    }
+};
+
 const RotateDir = enum {
     left,
     right,
@@ -79,21 +95,7 @@ r: u8,
 
 // Simulate Q register, used in scf/ccf flags calculation
 // If the last instruction changed the flags, Q = F, else Q = 0
-q: struct {
-    val: u8,
-    changed: bool,
-
-    const Self = @This();
-
-    pub inline fn set(self: *Self, val: u8) void {
-        self.val = val;
-        self.changed = true;
-    }
-
-    pub inline fn reset(self: *Self) void {
-        self.val = 0;
-    }
-},
+q: Q,
 
 // MEMPTR
 wz: u16,
@@ -108,6 +110,12 @@ iff2: bool,
 
 // interrupt mode
 imode: enum { mode0, mode1, mode2 },
+
+int_data: u8,
+int_requested: bool,
+nmi_requested: bool,
+
+ei_executed_last: bool,
 
 is_halted: bool,
 
@@ -169,6 +177,12 @@ pub fn reset(z: *Z80) void {
 
     z.imode = .mode0;
 
+    z.int_data = 0;
+    z.int_requested = false;
+    z.nmi_requested = false;
+
+    z.ei_executed_last = false;
+
     z.is_halted = false;
 
     z.cycles = 0;
@@ -187,6 +201,17 @@ pub inline fn step(z: *Z80) void {
     } else {
         z.q.changed = false;
     }
+
+    z.handle_interupts();
+}
+
+pub fn request_int(z: *Z80, data: u8) void {
+    z.int_data = data;
+    z.int_requested = true;
+}
+
+pub fn request_nmi(z: *Z80) void {
+    z.nmi_requested = true;
 }
 
 // ********** register helper functions ********** //
@@ -928,6 +953,8 @@ inline fn di(z: *Z80) void {
 inline fn ei(z: *Z80) void {
     z.iff1 = true;
     z.iff2 = true;
+
+    z.ei_executed_last = true;
 }
 
 inline fn retn(z: *Z80) void {
@@ -2107,6 +2134,63 @@ inline fn exec_opcode_xy_cb(z: *Z80, opcode: u8, addr: u16) void {
 
     if (registers[_z]) |r| {
         r.* = res;
+    }
+}
+
+inline fn handle_nmi(z: *Z80) void {
+    z.nmi_requested = false;
+
+    z.iff1 = false;
+    z.is_halted = false;
+
+    z.cycles += 11;
+
+    z.inc_r();
+    z.rst(0x66);
+}
+
+inline fn handle_int(z: *Z80) void {
+    z.nmi_requested = false;
+
+    z.iff1 = false;
+    z.iff2 = false;
+    z.is_halted = false;
+
+    z.inc_r();
+
+    switch (z.imode) {
+        .mode0 => {
+            z.cycles += 2;
+
+            z.exec_opcode(z.int_data);
+        },
+        .mode1 => {
+            z.cycles += 13;
+
+            z.rst(0x66);
+        },
+        .mode2 => {
+            z.cycles += 19 - 7; // call adds 7 cycles
+
+            const read_addr = (@as(u16, z.i) << 8) | z.int_data;
+            const call_addr = z.rw(read_addr);
+
+            z.call(call_addr, true);
+        },
+    }
+}
+
+inline fn handle_interupts(z: *Z80) void {
+    if (z.ei_executed_last) {
+        z.ei_executed_last = false;
+
+        return;
+    }
+
+    if (z.nmi_requested) {
+        z.handle_nmi();
+    } else if (z.int_requested and z.iff1 == true) {
+        z.handle_int();
     }
 }
 
