@@ -175,11 +175,10 @@ pub fn reset(z: *Z80) void {
 }
 
 pub inline fn step(z: *Z80) void {
-    if (z.is_halted) {
-        return;
-    }
-
-    const opcode = z.nextb();
+    const opcode: u8 = switch (z.is_halted) {
+        true => 0x00, // nop
+        false => z.nextb(),
+    };
 
     @call(.always_inline, exec_opcode, .{ z, opcode });
 
