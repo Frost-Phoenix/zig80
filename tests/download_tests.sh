@@ -76,16 +76,20 @@ clean() {
   rm -rf "$TESTS_DIR/roms"
 }
 
-arg="${1:-all}"
+if [ "$#" -ne 1 ]; then
+    echo "Error: Expected only one argument"
+    echo "Usage: $0 [all|sst|zex|z80test|clean]"
+    exit 1
+fi
 
-case "$arg" in
+case "$1" in
   all) all ;;
   sst) sst ;;
   zex) zex ;;
   z80test) z80test ;;
   clean) clean ;;
   *)
-    echo "Error: Unknown argument '$arg'"
+    echo "Error: Unknown argument '$1'"
     echo "Usage: $0 [all|sst|zex|z80test|clean]"
     exit 1
     ;;
