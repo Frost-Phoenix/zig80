@@ -3,7 +3,7 @@
 
   inputs = {
     zig2nix.url = "github:Cloudef/zig2nix";
-    zls.url = "github:zigtools/zls?ref=0.15.0";
+    zls.url = "github:zigtools/zls?ref=0.15.1";
 
     treefmt-nix.url = "github:numtide/treefmt-nix";
   };
