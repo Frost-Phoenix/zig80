@@ -2086,6 +2086,7 @@ inline fn exec_opcode_xy(z: *Z80, opcode: u8, xy_ptr: *u16) void {
 
         else => {
             z.dec_r();
+            z.q.reset();
 
             z.exec_opcode(opcode);
         },
