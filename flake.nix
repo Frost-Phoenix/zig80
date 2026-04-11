@@ -101,6 +101,10 @@
               zlsPkg
               zigimportsPkg
 
+              ## tools used to download tests
+              wget
+              unzip
+
               ## Profiling tools
               perf
               flamegraph
