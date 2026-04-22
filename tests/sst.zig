@@ -7,6 +7,7 @@ const std = @import("std");
 const log = std.log;
 const json = std.json;
 
+const Io = std.Io;
 const Allocator = std.mem.Allocator;
 
 const expectEqual = std.testing.expectEqual;
@@ -26,12 +27,12 @@ var category_results: std.EnumArray(TestCategory, TestResult) = .initFill(.init(
 
 const TestConfig = struct {
     name: []const u8,
-    initial: CPUState,
-    final: CPUState,
+    initial: Z80State,
+    final: Z80State,
     cycles: [][3]json.Value,
     ports: ?[][3]json.Value = null,
 
-    const CPUState = struct {
+    const Z80State = struct {
         pc: u16,
         sp: u16,
         a: u8,
@@ -79,12 +80,14 @@ const TestCategory = enum {
     pub fn getCategory(test_name: []const u8) TestCategory {
         if (test_name.len == 2) return .main;
 
-        if (std.mem.startsWith(u8, test_name, "dd cb")) return .ix_bit;
-        if (std.mem.startsWith(u8, test_name, "fd cb")) return .iy_bit;
-        if (std.mem.startsWith(u8, test_name, "ed")) return .misc;
-        if (std.mem.startsWith(u8, test_name, "cb")) return .bit;
-        if (std.mem.startsWith(u8, test_name, "dd")) return .ix;
-        if (std.mem.startsWith(u8, test_name, "fd")) return .iy;
+        const startsWith = std.mem.startsWith;
+
+        if (startsWith(u8, test_name, "dd cb")) return .ix_bit;
+        if (startsWith(u8, test_name, "fd cb")) return .iy_bit;
+        if (startsWith(u8, test_name, "ed")) return .misc;
+        if (startsWith(u8, test_name, "cb")) return .bit;
+        if (startsWith(u8, test_name, "dd")) return .ix;
+        if (startsWith(u8, test_name, "fd")) return .iy;
 
         log.err("Unknown category for test: {s}", .{test_name});
 
@@ -173,18 +176,19 @@ fn printSummary() void {
     log.info("   └─ (FDCB) IY Bit   {d:>3}/{d:>3}", .{ res.get(.iy_bit).passed, res.get(.iy_bit).total() });
 }
 
-fn parseTestConfig(allocator: Allocator, path: []const u8) !json.Parsed([]TestConfig) {
-    const file = try std.fs.cwd().openFile(path, .{ .mode = .read_only });
-    defer file.close();
+fn parseTestConfig(io: Io, alloc: Allocator, path: []const u8) !json.Parsed([]TestConfig) {
+    const cwd = Io.Dir.cwd();
+    const file = try cwd.openFile(io, path, .{ .mode = .read_only });
+    defer file.close(io);
 
     var buffer: [1024]u8 = undefined;
-    var file_reader = file.reader(&buffer);
-    var json_reader = std.json.Reader.init(allocator, &file_reader.interface);
+    var file_reader = file.reader(io, &buffer);
+    var json_reader = std.json.Reader.init(alloc, &file_reader.interface);
     defer json_reader.deinit();
 
     const parsed = try std.json.parseFromTokenSource(
         []TestConfig,
-        allocator,
+        alloc,
         &json_reader,
         .{
             .allocate = .alloc_always,
@@ -344,22 +348,22 @@ fn runTest(configs: []TestConfig, test_name: []const u8) !void {
     sstLog(.passed, test_name);
 }
 
-fn processFile(allocator: Allocator, file_path: []const u8) !void {
+fn processFile(io: Io, alloc: Allocator, file_path: []const u8) !void {
     const base_name = std.fs.path.basename(file_path);
     const ext = ".json";
     const test_name = base_name[0 .. base_name.len - ext.len];
 
-    const parsed_configs = try parseTestConfig(allocator, file_path);
+    const parsed_configs = try parseTestConfig(io, alloc, file_path);
     defer parsed_configs.deinit();
     const configs = parsed_configs.value;
 
     try runTest(configs, test_name);
 }
 
-fn runAll(allocator: Allocator) !void {
+fn runAll(io: Io, alloc: Allocator) !void {
     const base_path = "./tests/sst/";
 
-    const dir = std.fs.cwd().openDir(base_path, .{
+    const dir = Io.Dir.cwd().openDir(io, base_path, .{
         .access_sub_paths = false,
         .iterate = true,
     }) catch |err| {
@@ -370,18 +374,18 @@ fn runAll(allocator: Allocator) !void {
         return err;
     };
 
-    var walker = try dir.walk(allocator);
+    var walker = try dir.walk(alloc);
     defer walker.deinit();
 
-    while (try walker.next()) |file| {
+    while (try walker.next(io)) |file| {
         const file_name = file.basename;
-        const file_path = try std.mem.concat(allocator, u8, &[_][]const u8{
+        const file_path = try std.mem.concat(alloc, u8, &[_][]const u8{
             base_path,
             file_name,
         });
-        defer allocator.free(file_path);
+        defer alloc.free(file_path);
 
-        try processFile(allocator, file_path);
+        try processFile(io, alloc, file_path);
     }
 
     printSummary();
@@ -389,15 +393,11 @@ fn runAll(allocator: Allocator) !void {
 
 // ********** public functions ********** //
 
-pub fn main() !void {
-    var gpa: std.heap.GeneralPurposeAllocator(.{}) = .init;
-    defer _ = gpa.deinit();
-    const allocator = gpa.allocator();
+pub fn main(init: std.process.Init) !void {
+    const alloc = init.gpa;
+    const io = init.io;
 
-    log.info("{s}Z80 Single Step Tests{s}", .{ "\x1b[1m", "\x1b[0m" });
-
-    const args = try std.process.argsAlloc(allocator);
-    defer std.process.argsFree(allocator, args);
+    const args = try init.minimal.args.toSlice(init.arena.allocator());
 
     if (args.len == 2 and std.mem.eql(u8, args[1], "--ignore-unknown")) {
         ignore_unknown_opcodes_warnig = true;
@@ -405,9 +405,11 @@ pub fn main() !void {
         only_show_summary = true;
     }
 
+    log.info("{s}Z80 Single Step Tests{s}", .{ "\x1b[1m", "\x1b[0m" });
+
     if (args.len == 3 and std.mem.eql(u8, args[1], "--run")) {
-        try processFile(allocator, args[2]);
+        try processFile(io, alloc, args[2]);
     } else {
-        try runAll(allocator);
+        try runAll(io, alloc);
     }
 }
