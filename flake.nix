@@ -1,105 +1,60 @@
 {
-  description = "Zig project flake";
+  description = "Z80 CPU emulator";
 
   inputs = {
-    zig2nix.url = "github:Cloudef/zig2nix";
-    zls.url = "github:zigtools/zls?ref=0.15.1";
+    nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
 
-    treefmt-nix.url = "github:numtide/treefmt-nix";
+    zig-overlay = {
+      url = "github:silversquirl/zig-flake/compat";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+
+    treefmt-nix = {
+      url = "github:numtide/treefmt-nix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   outputs =
     {
-      zig2nix,
-      zls,
+      nixpkgs,
+      zig-overlay,
       treefmt-nix,
       ...
     }:
     let
-      flake-utils = zig2nix.inputs.flake-utils;
+      supportedSystems = [ "x86_64-linux" ];
+
+      forEachSupportedSystem =
+        f:
+        nixpkgs.lib.genAttrs supportedSystems (
+          system:
+          f {
+            pkgs = import nixpkgs { inherit system; };
+            zig = zig-overlay.packages."${system}".zig_0_16_0;
+            zls = zig-overlay.packages."${system}".zig_0_16_0.zls;
+          }
+        );
+
+      treefmtEval = forEachSupportedSystem (
+        { pkgs, ... }: treefmt-nix.lib.evalModule pkgs ./nix/treefmt.nix
+      );
     in
-    (flake-utils.lib.eachDefaultSystem (
-      system:
-      let
-        # Zig flake helper
-        # Check the flake.nix in zig2nix project for more options:
-        # <https://github.com/Cloudef/zig2nix/blob/master/flake.nix>
-        env = zig2nix.outputs.zig-env.${system} {
-          zig = zig2nix.outputs.packages.${system}.zig-latest;
-        };
+    {
+      devShells = forEachSupportedSystem (
+        {
+          pkgs,
+          zig,
+          zls,
+        }:
+        {
+          default = pkgs.mkShell {
+            packages = with pkgs; [
+              zig
+              zls
 
-        zlsPkg = zls.packages.${system}.default;
-        zigimportsPkg = env.pkgs.zigimports;
-        treefmtEval = treefmt-nix.lib.evalModule env.pkgs ./treefmt.nix;
-
-        nativeBuildInputs = with env.pkgs; [ ];
-        buildInputs = with env.pkgs; [ ];
-      in
-      with builtins;
-      with env.pkgs.lib;
-      rec {
-        # Produces clean binaries meant to be ship'd outside of nix
-        # nix build .#foreign
-        packages.foreign = env.package {
-          src = cleanSource ./.;
-
-          # Packages required for compiling
-          nativeBuildInputs = nativeBuildInputs;
-
-          # Packages required for linking
-          buildInputs = buildInputs;
-
-          # Smaller binaries and avoids shipping glibc.
-          zigPreferMusl = true;
-        };
-
-        # nix build .
-        packages.default = packages.foreign.override (attrs: {
-          # Prefer nix friendly settings.
-          zigPreferMusl = false;
-
-          # Executables required for runtime
-          # These packages will be added to the PATH
-          zigWrapperBins = [ ];
-
-          # Libraries required for runtime
-          # These packages will be added to the LD_LIBRARY_PATH
-          zigWrapperLibs = buildInputs;
-        });
-
-        # For bundling with nix bundle for running outside of nix
-        # example: https://github.com/ralismark/nix-appimage
-        apps.bundle = {
-          type = "app";
-          program = "${packages.foreign}/bin/zig80";
-        };
-
-        # nix run .
-        apps.default = {
-          type = "app";
-          program = "${packages.default}/bin/zig80";
-        };
-
-        # nix run .#build
-        apps.build = env.app [ ] "zig build \"$@\"";
-
-        # nix run .#test
-        apps.test = env.app [ ] "zig build test -- \"$@\"";
-
-        # nix run .#zig2nix
-        apps.zig2nix = env.app [ ] "zig2nix \"$@\"";
-
-        formatter = treefmtEval.config.build.wrapper;
-
-        # nix develop
-        devShells.default = env.mkShell {
-          # Packages required for compiling, linking and running
-          # Libraries added here will be automatically added to the LD_LIBRARY_PATH and PKG_CONFIG_PATH
-          nativeBuildInputs =
-            with env.pkgs;
-            [
-              zlsPkg
-              zigimportsPkg
+              ## Debug tools
+              zigimports
 
               ## tools used to download tests
               wget
@@ -108,10 +63,17 @@
               ## Profiling tools
               perf
               flamegraph
-            ]
-            ++ nativeBuildInputs
-            ++ buildInputs;
-        };
-      }
-    ));
+            ];
+
+            env = {
+              ZIG_BUILD_ERROR_STYLE = "minimal";
+            };
+          };
+        }
+      );
+
+      formatter = forEachSupportedSystem (
+        { pkgs, ... }: treefmtEval.${pkgs.stdenv.hostPlatform.system}.config.build.wrapper
+      );
+    };
 }

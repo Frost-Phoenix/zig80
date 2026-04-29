@@ -7,31 +7,42 @@ const std = @import("std");
 const log = std.log;
 const json = std.json;
 
+const Io = std.Io;
 const Allocator = std.mem.Allocator;
 
 const expectEqual = std.testing.expectEqual;
 
 // ********** global var ********** //
 
+const BOLD = "\x1b[1m";
+const GREEN = "\x1b[32m";
+const YELLOW = "\x1b[33m";
+const RED = "\x1b[31m";
+const RESET = "\x1b[0m";
+
 var memory: [65536]u8 = @splat(0);
 var ports: [65536]u8 = @splat(0);
 
-var only_show_summary: bool = false;
-var ignore_unknown_opcodes_warnig: bool = false;
+var summary_only: bool = false;
 
 var results: TestResult = .init();
 var category_results: std.EnumArray(TestCategory, TestResult) = .initFill(.init());
 
 // ********** types ********** //
 
+pub const RunnerConfig = struct {
+    summary_only: bool,
+    file_to_run: ?[]const u8,
+};
+
 const TestConfig = struct {
     name: []const u8,
-    initial: CPUState,
-    final: CPUState,
+    initial: Z80State,
+    final: Z80State,
     cycles: [][3]json.Value,
     ports: ?[][3]json.Value = null,
 
-    const CPUState = struct {
+    const Z80State = struct {
         pc: u16,
         sp: u16,
         a: u8,
@@ -79,12 +90,14 @@ const TestCategory = enum {
     pub fn getCategory(test_name: []const u8) TestCategory {
         if (test_name.len == 2) return .main;
 
-        if (std.mem.startsWith(u8, test_name, "dd cb")) return .ix_bit;
-        if (std.mem.startsWith(u8, test_name, "fd cb")) return .iy_bit;
-        if (std.mem.startsWith(u8, test_name, "ed")) return .misc;
-        if (std.mem.startsWith(u8, test_name, "cb")) return .bit;
-        if (std.mem.startsWith(u8, test_name, "dd")) return .ix;
-        if (std.mem.startsWith(u8, test_name, "fd")) return .iy;
+        const startsWith = std.mem.startsWith;
+
+        if (startsWith(u8, test_name, "dd cb")) return .ix_bit;
+        if (startsWith(u8, test_name, "fd cb")) return .iy_bit;
+        if (startsWith(u8, test_name, "ed")) return .misc;
+        if (startsWith(u8, test_name, "cb")) return .bit;
+        if (startsWith(u8, test_name, "dd")) return .ix;
+        if (startsWith(u8, test_name, "fd")) return .iy;
 
         log.err("Unknown category for test: {s}", .{test_name});
 
@@ -128,63 +141,78 @@ fn ioWrite(addr: u16, val: u8) void {
     ports[addr] = val;
 }
 
-fn sstLog(comptime status: TestStatus, test_name: []const u8) void {
-    if (only_show_summary and status != .failed) {
+fn sstLog(writer: *Io.Writer, comptime status: TestStatus, test_name: []const u8) !void {
+    if (summary_only and status != .failed) {
         return;
     }
 
     const status_txt = switch (status) {
-        .passed => "\x1b[32m" ++ @tagName(status) ++ "\x1b[0m",
-        .skipped => "\x1b[33m" ++ @tagName(status) ++ "\x1b[0m",
-        .failed => "\x1b[31m" ++ @tagName(status) ++ "\x1b[0m",
+        .passed => GREEN ++ @tagName(status) ++ RESET,
+        .skipped => YELLOW ++ @tagName(status) ++ RESET,
+        .failed => RED ++ @tagName(status) ++ RESET,
     };
 
-    const logFn = switch (status) {
-        .passed => log.info,
-        .skipped => log.warn,
-        .failed => log.err,
-    };
-
-    logFn("{s}: \"{s}\"", .{ status_txt, test_name });
+    try writer.print("{s}: \"{s}\"\n", .{ status_txt, test_name });
+    try writer.flush();
 }
 
-fn printSummary() void {
-    const bold = "\x1b[1m";
-    const green = "\x1b[32m";
-    const yellow = "\x1b[33m";
-    const red = "\x1b[31m";
-    const reset = "\x1b[0m";
-
+fn printSummary(writer: *Io.Writer) !void {
     const res = category_results;
 
-    log.info("", .{});
-    log.info("{s}Summary{s}", .{ bold, reset });
-    log.info("├─ Ran {d} tests", .{results.total()});
-    log.info("│  ├─ Passed\t{s}{d:>4}{s}/{d}", .{ green, results.passed, reset, results.total() });
-    log.info("│  ├─ Skipped\t{s}{d:>4}{s}/{d}", .{ yellow, results.skipped, reset, results.total() });
-    log.info("│  └─ Failed\t{s}{d:>4}{s}/{d}", .{ red, results.failed, reset, results.total() });
-    log.info("└─ Detail", .{});
-    log.info("   ├─ Main\t    {d:>3}/{d:>3}", .{ res.get(.main).passed, res.get(.main).total() });
-    log.info("   ├─ (ED) Misc\t    {d:>3}/{d:>3}", .{ res.get(.misc).passed, res.get(.misc).total() });
-    log.info("   ├─ (CB) Bit\t    {d:>3}/{d:>3}", .{ res.get(.bit).passed, res.get(.bit).total() });
-    log.info("   ├─ (DD) IX\t    {d:>3}/{d:>3}", .{ res.get(.ix).passed, res.get(.ix).total() });
-    log.info("   ├─ (FD) IY\t    {d:>3}/{d:>3}", .{ res.get(.iy).passed, res.get(.iy).total() });
-    log.info("   ├─ (DDCB) IX Bit   {d:>3}/{d:>3}", .{ res.get(.ix_bit).passed, res.get(.ix_bit).total() });
-    log.info("   └─ (FDCB) IY Bit   {d:>3}/{d:>3}", .{ res.get(.iy_bit).passed, res.get(.iy_bit).total() });
+    const summary =
+        \\{s}Summary{s}
+        \\├─ Ran {d} tests
+        \\│  ├─ Passed        {s}{d:>4}{s}/{d}
+        \\│  ├─ Skipped       {s}{d:>4}{s}/{d}
+        \\│  └─ Failed        {s}{d:>4}{s}/{d}
+        \\└─ Detail
+        \\   ├─ Main            {d:>3}/{d:>3}
+        \\   ├─ (ED) Misc       {d:>3}/{d:>3}
+        \\   ├─ (CB) Bit        {d:>3}/{d:>3}
+        \\   ├─ (DD) IX         {d:>3}/{d:>3}
+        \\   ├─ (FD) IY         {d:>3}/{d:>3}
+        \\   ├─ (DDCB) IX Bit   {d:>3}/{d:>3}
+        \\   └─ (FDCB) IY Bit   {d:>3}/{d:>3}
+        \\
+    ;
+
+    if (!summary_only) {
+        try writer.print("\n", .{});
+    }
+
+    // zig fmt: off
+    try writer.print(summary, .{
+        BOLD, RESET,
+        results.total(),
+        GREEN,  results.passed,  RESET, results.total(),
+        YELLOW, results.skipped, RESET, results.total(),
+        RED,    results.failed,  RESET, results.total(),
+        res.get(.main).passed,   res.get(.main).total(),
+        res.get(.misc).passed,   res.get(.misc).total(),
+        res.get(.bit).passed,    res.get(.bit).total(),
+        res.get(.ix).passed,     res.get(.ix).total(),     
+        res.get(.iy).passed,     res.get(.iy).total(),
+        res.get(.ix_bit).passed, res.get(.ix_bit).total(),
+        res.get(.iy_bit).passed, res.get(.iy_bit).total(),
+    });
+    // zig fmt: on
+
+    try writer.flush();
 }
 
-fn parseTestConfig(allocator: Allocator, path: []const u8) !json.Parsed([]TestConfig) {
-    const file = try std.fs.cwd().openFile(path, .{ .mode = .read_only });
-    defer file.close();
+fn parseTestConfig(io: Io, alloc: Allocator, path: []const u8) !json.Parsed([]TestConfig) {
+    const cwd = Io.Dir.cwd();
+    const file = try cwd.openFile(io, path, .{ .mode = .read_only });
+    defer file.close(io);
 
     var buffer: [1024]u8 = undefined;
-    var file_reader = file.reader(&buffer);
-    var json_reader = std.json.Reader.init(allocator, &file_reader.interface);
+    var file_reader = file.reader(io, &buffer);
+    var json_reader = std.json.Reader.init(alloc, &file_reader.interface);
     defer json_reader.deinit();
 
     const parsed = try std.json.parseFromTokenSource(
         []TestConfig,
-        allocator,
+        alloc,
         &json_reader,
         .{
             .allocate = .alloc_always,
@@ -306,7 +334,7 @@ fn expectZ80State(z: *Z80, config: TestConfig) !void {
     }
 }
 
-fn runTest(configs: []TestConfig, test_name: []const u8) !void {
+fn runTest(writer: *Io.Writer, configs: []TestConfig, test_name: []const u8) !void {
     var z: Z80 = .init(.{
         .memRead = &memRead,
         .memWrite = &memWrite,
@@ -326,9 +354,9 @@ fn runTest(configs: []TestConfig, test_name: []const u8) !void {
             results.failed += 1;
             test_results.failed += 1;
 
-            sstLog(.failed, config.name);
+            try sstLog(writer, .failed, config.name);
 
-            if (only_show_summary) {
+            if (summary_only) {
                 return;
             }
 
@@ -341,25 +369,25 @@ fn runTest(configs: []TestConfig, test_name: []const u8) !void {
     results.passed += 1;
     test_results.passed += 1;
 
-    sstLog(.passed, test_name);
+    try sstLog(writer, .passed, test_name);
 }
 
-fn processFile(allocator: Allocator, file_path: []const u8) !void {
+fn processFile(io: Io, alloc: Allocator, writer: *Io.Writer, file_path: []const u8) !void {
     const base_name = std.fs.path.basename(file_path);
     const ext = ".json";
     const test_name = base_name[0 .. base_name.len - ext.len];
 
-    const parsed_configs = try parseTestConfig(allocator, file_path);
+    const parsed_configs = try parseTestConfig(io, alloc, file_path);
     defer parsed_configs.deinit();
     const configs = parsed_configs.value;
 
-    try runTest(configs, test_name);
+    try runTest(writer, configs, test_name);
 }
 
-fn runAll(allocator: Allocator) !void {
+fn runAll(io: Io, alloc: Allocator, writer: *Io.Writer) !void {
     const base_path = "./tests/sst/";
 
-    const dir = std.fs.cwd().openDir(base_path, .{
+    const dir = Io.Dir.cwd().openDir(io, base_path, .{
         .access_sub_paths = false,
         .iterate = true,
     }) catch |err| {
@@ -370,44 +398,36 @@ fn runAll(allocator: Allocator) !void {
         return err;
     };
 
-    var walker = try dir.walk(allocator);
+    var walker = try dir.walk(alloc);
     defer walker.deinit();
 
-    while (try walker.next()) |file| {
+    while (try walker.next(io)) |file| {
         const file_name = file.basename;
-        const file_path = try std.mem.concat(allocator, u8, &[_][]const u8{
+        const file_path = try std.mem.concat(alloc, u8, &[_][]const u8{
             base_path,
             file_name,
         });
-        defer allocator.free(file_path);
+        defer alloc.free(file_path);
 
-        try processFile(allocator, file_path);
+        try processFile(io, alloc, writer, file_path);
     }
 
-    printSummary();
+    try printSummary(writer);
 }
 
 // ********** public functions ********** //
 
-pub fn main() !void {
-    var gpa: std.heap.GeneralPurposeAllocator(.{}) = .init;
-    defer _ = gpa.deinit();
-    const allocator = gpa.allocator();
+pub fn run(io: Io, alloc: Allocator, writer: *Io.Writer, config: RunnerConfig) !void {
+    try writer.print("{s}Z80 Single Step Tests{s}\n\n", .{ BOLD, RESET });
+    try writer.flush();
 
-    log.info("{s}Z80 Single Step Tests{s}", .{ "\x1b[1m", "\x1b[0m" });
-
-    const args = try std.process.argsAlloc(allocator);
-    defer std.process.argsFree(allocator, args);
-
-    if (args.len == 2 and std.mem.eql(u8, args[1], "--ignore-unknown")) {
-        ignore_unknown_opcodes_warnig = true;
-    } else if (args.len == 2 and std.mem.eql(u8, args[1], "--summary-only")) {
-        only_show_summary = true;
+    if (config.summary_only) {
+        summary_only = true;
     }
 
-    if (args.len == 3 and std.mem.eql(u8, args[1], "--run")) {
-        try processFile(allocator, args[2]);
+    if (config.file_to_run) |file| {
+        try processFile(io, alloc, writer, file);
     } else {
-        try runAll(allocator);
+        try runAll(io, alloc, writer);
     }
 }

@@ -10,114 +10,37 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
-    const test_sst = b.addExecutable(.{
-        .name = "zig80_test_sst",
-
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("tests/sst.zig"),
-
-            .target = target,
-            .optimize = optimize,
-
-            .imports = &.{
-                .{ .name = "zig80", .module = mod_zig80 },
-            },
-        }),
+    const mod_test = b.createModule(.{
+        .root_source_file = b.path("tests/test_runner.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{
+            .{ .name = "zig80", .module = mod_zig80 },
+        },
     });
-    b.installArtifact(test_sst);
 
-    const run_step_sst = b.step("test-sst", "Run Single Step Tests");
-    const run_cmd_sst = b.addRunArtifact(test_sst);
-
-    run_step_sst.dependOn(&run_cmd_sst.step);
-
-    const test_zex = b.addExecutable(.{
-        .name = "zig80_test_zex",
-
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("tests/zex.zig"),
-
-            .target = target,
-            .optimize = optimize,
-
-            .imports = &.{
-                .{ .name = "zig80", .module = mod_zig80 },
-            },
-        }),
+    const exe_test = b.addExecutable(.{
+        .name = "zig80_test",
+        .root_module = mod_test,
     });
-    b.installArtifact(test_zex);
+    b.installArtifact(exe_test);
 
-    const run_step_zex = b.step("test-zex", "Run Single Step Tests");
-    const run_cmd_zex = b.addRunArtifact(test_zex);
+    const run_step_test = b.step("test", "Test runner");
+    const run_cmd_test = b.addRunArtifact(exe_test);
 
-    run_step_zex.dependOn(&run_cmd_zex.step);
-
-    const test_z80test = b.addExecutable(.{
-        .name = "zig80_test_z80test",
-
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("tests/z80test.zig"),
-
-            .target = target,
-            .optimize = optimize,
-
-            .imports = &.{
-                .{ .name = "zig80", .module = mod_zig80 },
-            },
-        }),
-    });
-    b.installArtifact(test_z80test);
-
-    const run_step_z80test = b.step("test-z80test", "Run Single Step Tests");
-    const run_cmd_z80test = b.addRunArtifact(test_z80test);
-
-    run_step_z80test.dependOn(&run_cmd_z80test.step);
+    run_step_test.dependOn(&run_cmd_test.step);
+    run_cmd_test.step.dependOn(b.getInstallStep());
 
     if (b.args) |args| {
-        run_cmd_sst.addArgs(args);
-        run_cmd_zex.addArgs(args);
-        run_cmd_z80test.addArgs(args);
+        run_cmd_test.addArgs(args);
     }
 
     // "check" step used by ZLS for Build-On-Save.
-    const check = b.step("check", "Check if all code compile");
+    const check = b.step("check", "Check compilation");
 
-    const exe_check_sst = b.addExecutable(.{
-        .name = "check_sst",
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("tests/sst.zig"),
-            .target = target,
-            .optimize = optimize,
-            .imports = &.{
-                .{ .name = "zig80", .module = mod_zig80 },
-            },
-        }),
+    const exe_check = b.addExecutable(.{
+        .name = "check",
+        .root_module = mod_test,
     });
-    check.dependOn(&exe_check_sst.step);
-
-    const exe_check_zex = b.addExecutable(.{
-        .name = "check_zex",
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("tests/zex.zig"),
-            .target = target,
-            .optimize = optimize,
-            .imports = &.{
-                .{ .name = "zig80", .module = mod_zig80 },
-            },
-        }),
-    });
-    check.dependOn(&exe_check_zex.step);
-
-    const exe_check_z80test = b.addExecutable(.{
-        .name = "check_z80test",
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("tests/z80test.zig"),
-            .target = target,
-            .optimize = optimize,
-            .imports = &.{
-                .{ .name = "zig80", .module = mod_zig80 },
-            },
-        }),
-    });
-    check.dependOn(&exe_check_z80test.step);
+    check.dependOn(&exe_check.step);
 }
