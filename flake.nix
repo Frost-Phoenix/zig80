@@ -64,6 +64,10 @@
               perf
               flamegraph
             ];
+
+            env = {
+              ZIG_BUILD_ERROR_STYLE = "minimal";
+            };
           };
         }
       );
