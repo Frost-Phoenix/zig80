@@ -11,7 +11,11 @@ const Allocator = std.mem.Allocator;
 
 // ********** global var ********** //
 
+const BOLD = "\x1b[1m";
+const RESET = "\x1b[0m";
+
 const start_addr = 0x8000;
+const rom_extention = ".tap";
 
 var z: Z80 = .init(.{
     .memRead = &memRead,
@@ -19,9 +23,8 @@ var z: Z80 = .init(.{
     .ioRead = &ioRead,
     .ioWrite = &ioWrite,
 });
-var memory: [65536]u8 = @splat(0);
 
-const rom_extention = ".tap";
+var memory: [65536]u8 = @splat(0);
 
 // ********** private functions ********** //
 
@@ -40,7 +43,7 @@ fn ioRead(_: u16) u8 {
 fn ioWrite(_: u16, _: u8) void {}
 
 fn loadRom(io: Io, alloc: Allocator, rom_name: []const u8) !void {
-    const base_path = "./tests/roms/";
+    const base_path = "./tests/roms/z80";
 
     const rom_path = try std.mem.concat(alloc, u8, &[_][]const u8{
         base_path,
@@ -69,86 +72,70 @@ fn loadRom(io: Io, alloc: Allocator, rom_name: []const u8) !void {
     memory[0x1601] = 0xC9;
 }
 
-fn runTest(io: Io, allocaor: Allocator, stdout: *Io.Writer, rom_name: []const u8) !void {
+fn handleSyscall(writer: *Io.Writer) !void {
+    var char: u8 = z.a;
+
+    if (char == '\r') char = '\n';
+    if (char == 23 or char == 26) char = ' ';
+
+    if ((33 <= char and char <= 126) or char == '\n' or char == ' ') {
+        try writer.print("{c}", .{char});
+        try writer.flush();
+    }
+}
+
+fn runTest(io: Io, allocaor: Allocator, writer: *Io.Writer, rom_name: []const u8) !void {
     z.reset();
     z.pc = start_addr;
 
     try loadRom(io, allocaor, rom_name);
 
-    log.info("Running {s}{s}\n", .{ rom_name, rom_extention });
+    log.info("Running z80{s}{s}\n", .{ rom_name, rom_extention });
 
+    var nb_instructions: u64 = 0;
     const timer: std.Io.Timestamp = .now(io, .awake);
 
     while (z.pc != 0x0000) {
         z.step();
+        nb_instructions += 1;
 
         if (z.pc == 0x0010) {
-            var char: u8 = z.a;
-
-            if (char == '\r') char = '\n';
-            if (char == 23 or char == 26) char = ' ';
-
-            if ((33 <= char and char <= 126) or char == '\n' or char == ' ') {
-                stdout.print("{c}", .{char}) catch {};
-                stdout.flush() catch {};
-            }
+            try handleSyscall(writer);
         }
     }
 
     const duration = Io.Timestamp.untilNow(timer, io, .awake);
     const test_time: f128 = @as(f128, @floatFromInt(duration.toNanoseconds())) / 1_000_000_000.0;
 
-    try stdout.print("\n", .{});
-    try stdout.flush();
+    try writer.print("\n", .{});
+    try writer.flush();
 
-    log.info("Test {s}{s} took {d} cycles, and ran in {:.2}s", .{ rom_name, rom_extention, z.cycles, test_time });
-    log.info("Test {s}{s} ran at {:.2} MHz", .{
+    log.info("Test {s}{s} took {d} cycles, and ran in {:.2}s", .{
+        rom_name,
+        rom_extention,
+        z.cycles,
+        test_time,
+    });
+    log.info("Test {s}{s} ran at {:.2} MHz ({:.2} MIPS)", .{
         rom_name,
         rom_extention,
         @as(f128, @floatFromInt(z.cycles)) / test_time / 1_000_000.0,
+        @as(f128, @floatFromInt(nb_instructions)) / test_time / 1_000_000.0,
     });
 }
 
 // ********** public functions ********** //
 
-pub fn main(init: std.process.Init) !void {
-    const alloc = init.gpa;
-    const io = init.io;
+pub fn run(io: Io, alloc: Allocator, writer: *Io.Writer, rom: ?[]const u8) !void {
+    try writer.print("{s}Z80 z80test Tests{s}\n", .{ BOLD, RESET });
 
-    const args = try init.minimal.args.toSlice(init.arena.allocator());
-
-    var stdout_buffer: [1024]u8 = undefined;
-    var stdout_writer = std.Io.File.stdout().writer(io, &stdout_buffer);
-    const stdout = &stdout_writer.interface;
-
-    log.info("{s}Z80 z80test Tests{s}", .{ "\x1b[1m", "\x1b[0m" });
-
-    if (args.len == 3 and std.mem.eql(u8, args[1], "--run")) {
-        if (std.mem.eql(u8, args[2], "z80doc")) try runTest(io, alloc, stdout, "z80doc");
-        if (std.mem.eql(u8, args[2], "z80full")) try runTest(io, alloc, stdout, "z80full");
-        if (std.mem.eql(u8, args[2], "z80docflags")) try runTest(io, alloc, stdout, "z80docflags");
-        if (std.mem.eql(u8, args[2], "z80flags")) try runTest(io, alloc, stdout, "z80flags");
-        if (std.mem.eql(u8, args[2], "z80ccf")) try runTest(io, alloc, stdout, "z80ccf");
-        if (std.mem.eql(u8, args[2], "z80memptr")) try runTest(io, alloc, stdout, "z80memptr");
-    } else if (args.len != 1) {
-        @panic("unknown arg");
+    if (rom) |r| {
+        try runTest(io, alloc, writer, r);
     } else {
-        // run all
-        try runTest(io, alloc, stdout, "z80doc");
-        try stdout.print("\n", .{});
-        try stdout.flush();
-        try runTest(io, alloc, stdout, "z80full");
-        try stdout.print("\n", .{});
-        try stdout.flush();
-        try runTest(io, alloc, stdout, "z80docflags");
-        try stdout.print("\n", .{});
-        try stdout.flush();
-        try runTest(io, alloc, stdout, "z80flags");
-        try stdout.print("\n", .{});
-        try stdout.flush();
-        try runTest(io, alloc, stdout, "z80ccf");
-        try stdout.print("\n", .{});
-        try stdout.flush();
-        try runTest(io, alloc, stdout, "z80memptr");
+        const roms = [_][]const u8{ "doc", "full", "docflags", "flags", "ccf", "memptr" };
+        for (roms) |r| {
+            try runTest(io, alloc, writer, r);
+            try writer.flush();
+        }
     }
 }
