@@ -134,7 +134,8 @@ fn runTest(io: Io, allocaor: Allocator, writer: *Io.Writer, rom_name: []const u8
 // ********** public functions ********** //
 
 pub fn run(io: Io, alloc: Allocator, writer: *Io.Writer, rom: ?[]const u8) !void {
-    try writer.print("{s}Z80 ZEX Tests{s}\n", .{ BOLD, RESET });
+    try writer.print("{s}Z80 ZEX Tests{s}\n\n", .{ BOLD, RESET });
+    try writer.flush();
 
     if (rom) |r| {
         try runTest(io, alloc, writer, r);
