@@ -51,17 +51,17 @@ pub const Z80Error = error{
     UnknownOpcode,
 };
 
-const memReadFnPtr = *const fn (addr: u16) u8;
-const memWriteFnPtr = *const fn (addr: u16, val: u8) void;
-const ioReadFnPtr = *const fn (addr: u16) u8;
-const ioWriteFnPtr = *const fn (addr: u16, val: u8) void;
+const MemReadFnPtr = *const fn (addr: u16) u8;
+const MemWriteFnPtr = *const fn (addr: u16, val: u8) void;
+const IoReadFnPtr = *const fn (addr: u16) u8;
+const IoWriteFnPtr = *const fn (addr: u16, val: u8) void;
 
 pub const Z80Config = struct {
-    memRead: memReadFnPtr,
-    memWrite: memWriteFnPtr,
+    memRead: MemReadFnPtr,
+    memWrite: MemWriteFnPtr,
 
-    ioRead: ioReadFnPtr,
-    ioWrite: ioWriteFnPtr,
+    ioRead: IoReadFnPtr,
+    ioWrite: IoWriteFnPtr,
 };
 
 // ********** Z80 ********** //
@@ -86,7 +86,9 @@ hl_: u16,
 ix: u16,
 iy: u16,
 
+// interrupt vector
 i: u8,
+// memory refresh
 r: u8,
 
 // Simulate Q register, used in scf/ccf flags calculation
@@ -118,11 +120,11 @@ is_halted: bool,
 // cycles count
 cycles: u64,
 
-memRead: memReadFnPtr,
-memWrite: memWriteFnPtr,
+memRead: MemReadFnPtr,
+memWrite: MemWriteFnPtr,
 
-ioRead: ioReadFnPtr,
-ioWrite: ioWriteFnPtr,
+ioRead: IoReadFnPtr,
+ioWrite: IoWriteFnPtr,
 
 // ********** public functions ********** //
 
@@ -190,7 +192,7 @@ pub inline fn step(z: *Z80) void {
         false => z.nextb(),
     };
 
-    @call(.always_inline, exec_opcode, .{ z, opcode });
+    @call(.always_inline, execOpcode, .{ z, opcode });
 
     if (!z.q.changed) {
         z.q.reset();
@@ -198,15 +200,15 @@ pub inline fn step(z: *Z80) void {
         z.q.changed = false;
     }
 
-    z.handle_interupts();
+    z.handleInterupts();
 }
 
-pub fn request_int(z: *Z80, data: u8) void {
+pub fn requestINT(z: *Z80, data: u8) void {
     z.int_data = data;
     z.int_requested = true;
 }
 
-pub fn request_nmi(z: *Z80) void {
+pub fn requestNMI(z: *Z80) void {
     z.nmi_requested = true;
 }
 
@@ -844,7 +846,7 @@ inline fn rld(z: *Z80) void {
     z.wz = z.getHL() +% 1;
 }
 
-inline fn bit_test(z: *Z80, bit: u3, val: u8) void {
+inline fn bitTest(z: *Z80, bit: u3, val: u8) void {
     z.f.n = false;
     z.f.pv = getBit(bit, val) == 0;
     z.f.x = getBit(3, val) == 1;
@@ -1365,7 +1367,7 @@ inline fn otdr(z: *Z80) void {
     z.q.set(z.f.getF());
 }
 
-fn exec_opcode(z: *Z80, opcode: u8) void {
+fn execOpcode(z: *Z80, opcode: u8) void {
     z.inc_r();
     z.cycles +%= cycles_main[opcode];
 
@@ -1741,14 +1743,14 @@ fn exec_opcode(z: *Z80, opcode: u8) void {
             z.wz = wz;
         }, // in a, (n)
 
-        0xcb => z.exec_opcode_cb(z.nextb()), // cb prefixed opcodes
-        0xed => z.exec_opcode_ed(z.nextb()), // ed prefixed opcodes
-        0xdd => z.exec_opcode_xy(z.nextb(), &z.ix), // dd prefixed opcodes
-        0xfd => z.exec_opcode_xy(z.nextb(), &z.iy), // fd prefixed opcodes
+        0xcb => z.execOpcodeCB(z.nextb()), // cb prefixed opcodes
+        0xed => z.execOpcodeED(z.nextb()), // ed prefixed opcodes
+        0xdd => z.execOpcodeXY(z.nextb(), &z.ix), // dd prefixed opcodes
+        0xfd => z.execOpcodeXY(z.nextb(), &z.iy), // fd prefixed opcodes
     }
 }
 
-inline fn exec_opcode_ed(z: *Z80, opcode: u8) void {
+inline fn execOpcodeED(z: *Z80, opcode: u8) void {
     z.inc_r();
     z.cycles +%= cycles_misc[opcode];
 
@@ -1835,7 +1837,7 @@ inline fn exec_opcode_ed(z: *Z80, opcode: u8) void {
     }
 }
 
-inline fn exec_opcode_cb(z: *Z80, opcode: u8) void {
+inline fn execOpcodeCB(z: *Z80, opcode: u8) void {
     z.inc_r();
 
     const registers: [8]?*u8 = .{ &z.b, &z.c, &z.d, &z.e, &z.h, &z.l, null, &z.a };
@@ -1856,7 +1858,7 @@ inline fn exec_opcode_cb(z: *Z80, opcode: u8) void {
                 6 => z.shift(r.*, .left, true),
                 7 => z.shift(r.*, .right, false),
             },
-            1 => z.bit_test(_y, r.*),
+            1 => z.bitTest(_y, r.*),
             2 => r.* = resetBit(_y, r.*),
             3 => r.* = setBit(_y, r.*),
         }
@@ -1878,7 +1880,7 @@ inline fn exec_opcode_cb(z: *Z80, opcode: u8) void {
                 7 => z.shift(val, .right, false),
             }),
             1 => {
-                z.bit_test(_y, val);
+                z.bitTest(_y, val);
 
                 z.f.x = getBit(11, z.wz) == 1;
                 z.f.y = getBit(13, z.wz) == 1;
@@ -1895,7 +1897,7 @@ inline fn exec_opcode_cb(z: *Z80, opcode: u8) void {
     }
 }
 
-inline fn exec_opcode_xy(z: *Z80, opcode: u8, xy_ptr: *u16) void {
+inline fn execOpcodeXY(z: *Z80, opcode: u8, xy_ptr: *u16) void {
     z.inc_r();
     z.cycles +%= cycles_xy[opcode];
 
@@ -2077,19 +2079,19 @@ inline fn exec_opcode_xy(z: *Z80, opcode: u8, xy_ptr: *u16) void {
         0xcb => {
             const addr = xy.getAddr(z);
 
-            z.exec_opcode_xy_cb(z.nextb(), addr);
+            z.execOpcodeXY_CB(z.nextb(), addr);
         },
 
         else => {
             z.dec_r();
             z.q.reset();
 
-            z.exec_opcode(opcode);
+            z.execOpcode(opcode);
         },
     }
 }
 
-inline fn exec_opcode_xy_cb(z: *Z80, opcode: u8, addr: u16) void {
+inline fn execOpcodeXY_CB(z: *Z80, opcode: u8, addr: u16) void {
     const registers: [8]?*u8 = .{ &z.b, &z.c, &z.d, &z.e, &z.h, &z.l, null, &z.a };
 
     const _x: u2 = @truncate(opcode >> 6);
@@ -2110,7 +2112,7 @@ inline fn exec_opcode_xy_cb(z: *Z80, opcode: u8, addr: u16) void {
             7 => z.shift(val, .right, false),
         },
         1 => {
-            z.bit_test(_y, val);
+            z.bitTest(_y, val);
 
             z.f.x = getBit(11, addr) == 1;
             z.f.y = getBit(13, addr) == 1;
@@ -2134,7 +2136,7 @@ inline fn exec_opcode_xy_cb(z: *Z80, opcode: u8, addr: u16) void {
     }
 }
 
-inline fn handle_nmi(z: *Z80) void {
+inline fn handleNMI(z: *Z80) void {
     z.nmi_requested = false;
 
     z.iff1 = false;
@@ -2146,7 +2148,7 @@ inline fn handle_nmi(z: *Z80) void {
     z.rst(0x66);
 }
 
-inline fn handle_int(z: *Z80) void {
+inline fn handleINT(z: *Z80) void {
     z.nmi_requested = false;
 
     z.iff1 = false;
@@ -2159,7 +2161,7 @@ inline fn handle_int(z: *Z80) void {
         .mode0 => {
             z.cycles += 2;
 
-            z.exec_opcode(z.int_data);
+            z.execOpcode(z.int_data);
         },
         .mode1 => {
             z.cycles += 13;
@@ -2177,17 +2179,16 @@ inline fn handle_int(z: *Z80) void {
     }
 }
 
-inline fn handle_interupts(z: *Z80) void {
+inline fn handleInterupts(z: *Z80) void {
     if (z.ei_executed_last) {
         z.ei_executed_last = false;
-
         return;
     }
 
     if (z.nmi_requested) {
-        z.handle_nmi();
+        z.handleNMI();
     } else if (z.int_requested and z.iff1 == true) {
-        z.handle_int();
+        z.handleINT();
     }
 }
 
