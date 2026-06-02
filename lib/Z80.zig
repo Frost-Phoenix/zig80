@@ -2139,6 +2139,7 @@ inline fn execOpcodeXY_CB(z: *Z80, opcode: u8, addr: u16) void {
 inline fn handleNMI(z: *Z80) void {
     z.nmi_requested = false;
 
+    z.iff2 = z.iff1;
     z.iff1 = false;
     z.is_halted = false;
 
@@ -2149,7 +2150,7 @@ inline fn handleNMI(z: *Z80) void {
 }
 
 inline fn handleINT(z: *Z80) void {
-    z.nmi_requested = false;
+    z.int_requested = false;
 
     z.iff1 = false;
     z.iff2 = false;
@@ -2166,7 +2167,7 @@ inline fn handleINT(z: *Z80) void {
         .mode1 => {
             z.cycles += 13;
 
-            z.rst(0x66);
+            z.rst(0x38);
         },
         .mode2 => {
             z.cycles += 19 - 7; // call adds 7 cycles
