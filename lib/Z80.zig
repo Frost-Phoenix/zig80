@@ -187,6 +187,8 @@ pub fn reset(z: *Z80) void {
 }
 
 pub inline fn step(z: *Z80) void {
+    z.handleInterupts();
+
     const opcode: u8 = switch (z.is_halted) {
         true => 0x00, // nop
         false => z.nextb(),
@@ -199,11 +201,11 @@ pub inline fn step(z: *Z80) void {
     } else {
         z.q.changed = false;
     }
-
-    z.handleInterupts();
 }
 
 pub fn requestINT(z: *Z80, data: u8) void {
+    if (z.iff1 != true) return;
+
     z.int_data = data;
     z.int_requested = true;
 }
